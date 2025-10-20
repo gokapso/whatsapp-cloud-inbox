@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Read(//Users/andres/Documents/GitHub/kapso_ai/cientos/app/services/whatsapp/meta_proxy/handlers/**)",
+      "Read(//Users/andres/Documents/GitHub/kapso_ai/cientos/app/blueprints/**)",
+      "Read(//Users/andres/Documents/GitHub/kapso_ai/whatsapp-cloud-api-js/**)",
+      "Read(//Users/andres/Documents/GitHub/kapso_ai/whatsapp-cloud-api-js/src/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
