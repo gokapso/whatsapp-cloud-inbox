@@ -123,3 +123,10 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Fix ScrollArea table layout breaking text truncation */
+[data-radix-scroll-area-viewport] > div {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}

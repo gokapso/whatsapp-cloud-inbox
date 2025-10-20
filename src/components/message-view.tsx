@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { format, isValid, isToday, isYesterday, differenceInHours } from 'date-fns';
-import { RefreshCw, Paperclip, Send, X, AlertCircle, MessageSquare, XCircle } from 'lucide-react';
+import { RefreshCw, Paperclip, Send, X, AlertCircle, MessageSquare, XCircle, ListTree } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MediaMessage } from '@/components/media-message';
 import { TemplateSelectorDialog } from '@/components/template-selector-dialog';
+import { InteractiveMessageDialog } from '@/components/interactive-message-dialog';
+import { useAutoPolling } from '@/hooks/use-auto-polling';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -126,9 +128,12 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [canSendRegularMessage, setCanSendRegularMessage] = useState(true);
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
+  const [showInteractiveDialog, setShowInteractiveDialog] = useState(false);
+  const [isNearBottom, setIsNearBottom] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const previousMessageCountRef = useRef(0);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -142,14 +147,38 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
   }, [conversationId]);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    // Only auto-scroll if user is near bottom
+    if (isNearBottom) {
+      scrollToBottom();
+    }
+  }, [messages, isNearBottom]);
 
   useEffect(() => {
     setCanSendRegularMessage(isWithin24HourWindow(messages));
   }, [messages]);
 
-  const fetchMessages = async () => {
+  // Track if user is near bottom of scroll
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const viewport = container.querySelector('[data-radix-scroll-area-viewport]');
+      if (!viewport) return;
+
+      const { scrollTop, scrollHeight, clientHeight } = viewport;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      setIsNearBottom(distanceFromBottom < 100);
+    };
+
+    const viewport = container.querySelector('[data-radix-scroll-area-viewport]');
+    if (viewport) {
+      viewport.addEventListener('scroll', handleScroll);
+      return () => viewport.removeEventListener('scroll', handleScroll);
+    }
+  }, []);
+
+  const fetchMessages = useCallback(async () => {
     if (!conversationId) return;
 
     try {
@@ -179,18 +208,26 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
       });
 
       setMessages(sortedMessages);
+      previousMessageCountRef.current = sortedMessages.length;
     } catch (error) {
       console.error('Error fetching messages:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [conversationId]);
 
   const handleRefresh = () => {
     setRefreshing(true);
     fetchMessages();
   };
+
+  // Auto-polling for messages (every 5 seconds)
+  const { isPolling } = useAutoPolling({
+    interval: 5000,
+    enabled: !!conversationId,
+    onPoll: fetchMessages
+  });
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -311,11 +348,10 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
             onClick={handleRefresh}
             disabled={refreshing}
             variant="ghost"
-            size="sm"
+            size="icon"
             className="text-[#667781] hover:bg-[#f0f2f5]"
           >
-            <RefreshCw className={cn("h-4 w-4 mr-2", refreshing && "animate-spin")} />
-            {refreshing ? 'Refreshing...' : 'Refresh'}
+            <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
           </Button>
         </div>
       </div>
@@ -507,8 +543,20 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
                 variant="ghost"
                 size="icon"
                 className="text-[#667781] hover:bg-[#d1d7db]/30"
+                title="Upload file"
               >
                 <Paperclip className="h-5 w-5" />
+              </Button>
+              <Button
+                type="button"
+                onClick={() => setShowInteractiveDialog(true)}
+                disabled={sending}
+                size="icon"
+                variant="ghost"
+                className="text-[#667781] hover:text-[#00a884] hover:bg-[#f0f2f5]"
+                title="Send interactive message"
+              >
+                <ListTree className="h-5 w-5" />
               </Button>
               <Input
                 type="text"
@@ -557,6 +605,14 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
         onOpenChange={setShowTemplateDialog}
         phoneNumber={phoneNumber || ''}
         onTemplateSent={handleTemplateSent}
+      />
+
+      <InteractiveMessageDialog
+        open={showInteractiveDialog}
+        onOpenChange={setShowInteractiveDialog}
+        conversationId={conversationId}
+        phoneNumber={phoneNumber}
+        onMessageSent={fetchMessages}
       />
     </div>
   );

@@ -13,14 +13,9 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-
-type Template = {
-  id: string;
-  name: string;
-  category: string;
-  language: string;
-  status: string;
-};
+import type { Template, TemplateParameterInfo } from '@/types/whatsapp';
+import { getTemplateParameters } from '@/lib/template-parser';
+import { TemplateParametersDialog } from './template-parameters-dialog';
 
 type Props = {
   open: boolean;
@@ -34,6 +29,11 @@ export function TemplateSelectorDialog({ open, onOpenChange, phoneNumber, onTemp
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Parameters dialog state
+  const [showParametersDialog, setShowParametersDialog] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
+  const [parameterInfo, setParameterInfo] = useState<TemplateParameterInfo | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -65,8 +65,24 @@ export function TemplateSelectorDialog({ open, onOpenChange, phoneNumber, onTemp
     }
   };
 
-  const handleSendTemplate = async (template: Template) => {
+  const handleSelectTemplate = (template: Template) => {
+    const params = getTemplateParameters(template);
+
+    // If template has parameters, show parameters dialog
+    if (params.parameters.length > 0) {
+      setSelectedTemplate(template);
+      setParameterInfo(params);
+      setShowParametersDialog(true);
+      return;
+    }
+
+    // No parameters - send immediately
+    handleSendTemplateWithoutParameters(template);
+  };
+
+  const handleSendTemplateWithoutParameters = async (template: Template) => {
     setSending(template.id);
+    setError(null);
     try {
       const response = await fetch('/api/templates/send', {
         method: 'POST',
@@ -93,6 +109,20 @@ export function TemplateSelectorDialog({ open, onOpenChange, phoneNumber, onTemp
     }
   };
 
+  const handleBackToTemplateSelector = () => {
+    setShowParametersDialog(false);
+    setSelectedTemplate(null);
+    setParameterInfo(null);
+  };
+
+  const handleTemplateWithParametersSent = () => {
+    setShowParametersDialog(false);
+    setSelectedTemplate(null);
+    setParameterInfo(null);
+    onOpenChange(false);
+    onTemplateSent?.();
+  };
+
   const getCategoryColor = (category: string) => {
     switch (category) {
       case 'MARKETING':
@@ -107,6 +137,7 @@ export function TemplateSelectorDialog({ open, onOpenChange, phoneNumber, onTemp
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
@@ -153,7 +184,7 @@ export function TemplateSelectorDialog({ open, onOpenChange, phoneNumber, onTemp
                       </div>
                     </div>
                     <Button
-                      onClick={() => handleSendTemplate(template)}
+                      onClick={() => handleSelectTemplate(template)}
                       disabled={sending !== null}
                       size="sm"
                       className="bg-[#00a884] hover:bg-[#008f6f]"
@@ -183,5 +214,18 @@ export function TemplateSelectorDialog({ open, onOpenChange, phoneNumber, onTemp
         </div>
       </DialogContent>
     </Dialog>
+
+    {selectedTemplate && parameterInfo && (
+      <TemplateParametersDialog
+        open={showParametersDialog}
+        onOpenChange={setShowParametersDialog}
+        template={selectedTemplate}
+        parameterInfo={parameterInfo}
+        phoneNumber={phoneNumber}
+        onBack={handleBackToTemplateSelector}
+        onTemplateSent={handleTemplateWithParametersSent}
+      />
+    )}
+  </>
   );
 }

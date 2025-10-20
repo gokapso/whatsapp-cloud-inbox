@@ -1,36 +1,100 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# WhatsApp Cloud API Inbox
 
-## Getting Started
+A modern, WhatsApp Web-style inbox built with Next.js for the WhatsApp Cloud API. Send messages, templates, and interactive buttons with a familiar UI.
 
-First, run the development server:
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fgokapso%2Fwhatsapp-cloud-inbox&env=PHONE_NUMBER_ID,KAPSO_API_KEY,WABA_ID&envDescription=Get%20these%20credentials%20from%20app.kapso.ai&envLink=https%3A%2F%2Fapp.kapso.ai)
+
+## Features
+
+- **Real-time messaging** - Auto-polling keeps conversations updated
+- **Template messages** - Full support for WhatsApp templates with parameters (header, body, buttons)
+- **Interactive messages** - Send button messages with up to 3 custom actions
+- **Media support** - Send images, videos, documents, and audio
+- **24-hour window enforcement** - Automatically restricts messaging outside WhatsApp's window
+- **Failed message indicators** - Visual feedback for delivery failures
+- **WhatsApp-style UI** - Familiar interface with read receipts, timestamps, and message bubbles
+
+## Tech Stack
+
+- **Next.js 15.5**
+- **React 19**
+- **Tailwind CSS 4**
+- **shadcn/ui**
+- **[@kapso/whatsapp-cloud-api](https://github.com/kapso-ai/whatsapp-cloud-api-js)** - WhatsApp Cloud API SDK
+- **date-fns**
+
+## Setup
+
+### 1. Get Kapso credentials
+
+1. Create account at [app.kapso.ai](https://app.kapso.ai)
+2. Connect a WhatsApp number
+3. Get your credentials:
+   - `PHONE_NUMBER_ID`
+   - `KAPSO_API_KEY`
+   - `WABA_ID`
+
+### 2. Clone and install
+
+```bash
+git clone https://github.com/gokapso/whatsapp-cloud-inbox.git
+cd whatsapp-cloud-inbox
+npm install
+```
+
+### 3. Environment variables
+
+Create `.env`:
+
+```env
+PHONE_NUMBER_ID=your_phone_number_id
+KAPSO_API_KEY=your_kapso_api_key
+WABA_ID=your_business_account_id
+```
+
+### 4. Run
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:4000](http://localhost:4000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Key Features
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Template Messages
 
-## Learn More
+Send WhatsApp-approved templates with dynamic parameters:
+- **Header + Body + Button parameters** - Full template support
+- **Named and positional parameters** - Automatic detection
+- **Two-step flow** - Select template → Fill parameters → Send
 
-To learn more about Next.js, take a look at the following resources:
+### Interactive Messages
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Create button messages without templates:
+- **Header (optional)** + **Body (required)** + **Buttons (1-3)**
+- Each button gets a unique ID and title (max 20 chars)
+- Ideal for quick replies, confirmations, menu selections
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 24-Hour Window
 
-## Deploy on Vercel
+Automatically enforces WhatsApp's messaging policy:
+- **Within 24h** - Send regular messages freely
+- **Outside 24h** - Template-only mode with clear messaging
+- **No inbound messages** - Guide users to send templates
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Message Types
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- ✅ Text messages
+- ✅ Images, videos, audio, documents
+- ✅ Template messages (with all parameter types)
+- ✅ Interactive button messages
+- ✅ Failed message indicators
+
+## Contributing
+
+Issues and PRs welcome. Keep it simple.
+
+## License
+
+MIT

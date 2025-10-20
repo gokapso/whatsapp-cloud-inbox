@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState, forwardRef, useImperativeHandle } from 'react';
+import { useEffect, useState, forwardRef, useImperativeHandle, useCallback } from 'react';
 import { format, isValid, isToday, isYesterday } from 'date-fns';
 import { RefreshCw, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAutoPolling } from '@/hooks/use-auto-polling';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -73,11 +74,7 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    fetchConversations();
-  }, []);
-
-  const fetchConversations = async () => {
+  const fetchConversations = useCallback(async () => {
     try {
       const response = await fetch('/api/conversations');
       const data = await response.json();
@@ -88,12 +85,23 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchConversations();
+  }, [fetchConversations]);
 
   const handleRefresh = () => {
     setRefreshing(true);
     fetchConversations();
   };
+
+  // Auto-polling for conversations (every 10 seconds)
+  const { isPolling } = useAutoPolling({
+    interval: 10000,
+    enabled: true,
+    onPoll: fetchConversations
+  });
 
   const selectByPhoneNumber = (phoneNumber: string) => {
     const conversation = conversations.find(conv => conv.phoneNumber === phoneNumber);
@@ -152,16 +160,23 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
     <div className="w-full md:w-96 border-r border-[#d1d7db] bg-white flex flex-col">
       <div className="p-4 border-b border-[#d1d7db] bg-[#f0f2f5]">
         <div className="flex items-center justify-between mb-3">
-          <h1 className="text-xl font-semibold text-[#111b21]">Chats</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-semibold text-[#111b21]">Chats</h1>
+            {isPolling && (
+              <div
+                className="h-2 w-2 rounded-full bg-green-500 animate-pulse"
+                title="Auto-updating"
+              />
+            )}
+          </div>
           <Button
             onClick={handleRefresh}
             disabled={refreshing}
             variant="ghost"
-            size="sm"
+            size="icon"
             className="text-[#667781] hover:bg-[#d1d7db]/30"
           >
-            <RefreshCw className={cn("h-4 w-4 mr-2", refreshing && "animate-spin")} />
-            {refreshing ? 'Refreshing...' : 'Refresh'}
+            <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
           </Button>
         </div>
         <div className="relative">
@@ -176,30 +191,30 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
         </div>
       </div>
 
-      <ScrollArea className="flex-1 h-0">
+      <ScrollArea className="flex-1 h-0 overflow-hidden">
         {filteredConversations.length === 0 ? (
           <div className="p-4 text-center text-[#667781]">
             {searchQuery ? 'No conversations found' : 'No conversations yet'}
           </div>
         ) : (
-          <div>
+          <div className="w-full overflow-hidden">
           {filteredConversations.map((conversation) => (
             <button
               key={conversation.id}
               onClick={() => onSelectConversation(conversation)}
               className={cn(
-                'w-full p-3 border-b border-[#e9edef] hover:bg-[#f0f2f5] text-left transition-colors relative',
+                'w-full p-3 pr-4 border-b border-[#e9edef] hover:bg-[#f0f2f5] text-left transition-colors relative overflow-hidden',
                 selectedConversationId === conversation.id && 'bg-[#f0f2f5]'
               )}
             >
-              <div className="flex gap-3 items-start">
+              <div className="flex gap-3 items-start overflow-hidden">
                 <Avatar className="h-12 w-12 flex-shrink-0">
                   <AvatarFallback className="bg-[#d1d7db] text-[#111b21] text-sm font-medium">
                     {getAvatarInitials(conversation.contactName, conversation.phoneNumber)}
                   </AvatarFallback>
                 </Avatar>
-                <div className="flex-1 min-w-0 flex justify-between items-start gap-3">
-                  <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 flex justify-between items-start gap-4 overflow-hidden">
+                  <div className="flex-1 min-w-0 overflow-hidden">
                     <p className="font-medium text-[#111b21] truncate">
                       {conversation.contactName || conversation.phoneNumber}
                     </p>
@@ -212,7 +227,7 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
                       </p>
                     )}
                   </div>
-                  <span className="text-xs text-[#667781] flex-shrink-0 mt-0.5">
+                  <span className="text-xs text-[#667781] flex-shrink-0 mt-0.5 ml-4">
                     {formatConversationDate(conversation.lastActiveAt)}
                   </span>
                 </div>
