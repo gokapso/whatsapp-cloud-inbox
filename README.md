@@ -1,8 +1,10 @@
-# WhatsApp Cloud API Inbox
+# WhatsApp Inbox
 
-A modern, WhatsApp Web-style inbox built with Next.js for the WhatsApp Cloud API. Send messages, templates, and interactive buttons with a familiar UI.
+A WhatsApp Web-style inbox built with Next.js for the WhatsApp Cloud API. Send messages, templates, and interactive buttons with a familiar UI.
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fgokapso%2Fwhatsapp-cloud-inbox&env=PHONE_NUMBER_ID,KAPSO_API_KEY,WABA_ID&envDescription=Get%20these%20credentials%20from%20app.kapso.ai&envLink=https%3A%2F%2Fapp.kapso.ai)
+
+![WhatsApp Cloud Inbox](.github/screenshots/kapso-whatsapp-inbox.png)
 
 ## Features
 
@@ -13,15 +15,6 @@ A modern, WhatsApp Web-style inbox built with Next.js for the WhatsApp Cloud API
 - **24-hour window enforcement** - Automatically restricts messaging outside WhatsApp's window
 - **Failed message indicators** - Visual feedback for delivery failures
 - **WhatsApp-style UI** - Familiar interface with read receipts, timestamps, and message bubbles
-
-## Tech Stack
-
-- **Next.js 15.5**
-- **React 19**
-- **Tailwind CSS 4**
-- **shadcn/ui**
-- **[@kapso/whatsapp-cloud-api](https://github.com/kapso-ai/whatsapp-cloud-api-js)** - WhatsApp Cloud API SDK
-- **date-fns**
 
 ## Setup
 
