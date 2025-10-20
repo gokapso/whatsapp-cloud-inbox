@@ -5,9 +5,8 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ mediaId: string }> }
 ) {
+  const { mediaId } = await params;
   try {
-    const { mediaId } = await params;
-
     // Get metadata for mime type
     const metadata = await whatsappClient.media.get({
       mediaId,
@@ -23,11 +22,19 @@ export async function GET(
       auth: 'never' // Force no auth headers for CDN
     });
 
-    console.log('[Media API Test] Download succeeded with auth: "never"', {
-      expectedSize: metadata.fileSize,
-      actualSize: buffer.byteLength,
-      match: buffer.byteLength === metadata.fileSize
-    });
+    // If buffer is a Response, return it directly
+    if (buffer instanceof Response) {
+      return buffer;
+    }
+
+    // Check if buffer is ArrayBuffer for logging
+    if (buffer instanceof ArrayBuffer) {
+      console.log('[Media API Test] Download succeeded with auth: "never"', {
+        expectedSize: metadata.fileSize,
+        actualSize: buffer.byteLength,
+        match: buffer.byteLength === parseInt(metadata.fileSize || '0')
+      });
+    }
 
     return new NextResponse(buffer, {
       headers: {
@@ -37,12 +44,11 @@ export async function GET(
     });
   } catch (error) {
     console.error('[Media API] Error:', error);
-    const { mediaId: errorMediaId } = await params;
     return NextResponse.json(
       {
         error: 'Failed to fetch media',
         details: error instanceof Error ? error.message : 'Unknown error',
-        mediaId: errorMediaId
+        mediaId
       },
       { status: 500 }
     );

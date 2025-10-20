@@ -3,6 +3,13 @@ import { buildTemplateSendPayload } from '@kapso/whatsapp-cloud-api';
 import { whatsappClient, PHONE_NUMBER_ID } from '@/lib/whatsapp-client';
 import type { TemplateParameterInfo } from '@/types/whatsapp';
 
+type TemplateSendInput = Parameters<typeof buildTemplateSendPayload>[0];
+type TemplateMessageInput = Parameters<(typeof whatsappClient.messages)['sendTemplate']>[0];
+type TemplatePayload = TemplateMessageInput['template'];
+type TemplateBodyParameter = NonNullable<TemplateSendInput['body']>[number];
+type TemplateHeaderParameter = Extract<NonNullable<TemplateSendInput['header']>, { type: 'text' }>;
+type TemplateButtonParameter = Extract<NonNullable<TemplateSendInput['buttons']>[number], { subType: 'url' }>;
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -15,86 +22,87 @@ export async function POST(request: Request) {
       );
     }
 
-    // Convert parameters to the format expected by buildTemplateSendPayload
-    let templateOptions: {
-      name: string;
-      language: string;
-      body?: Array<{ type: string; text: string }>;
-      header?: Array<{ type: string; text: string }>;
-      buttons?: Array<{
-        type: string;
-        subType: string;
-        index: number;
-        parameters: Array<{ type: string; text: string }>;
-      }>;
-    } = {
+    const templateOptions: TemplateSendInput = {
       name: templateName,
-      language: languageCode,
+      language: languageCode
     };
 
-    // If parameters are provided, structure them for the template
     if (parameters && parameterInfo) {
       const typedParamInfo = parameterInfo as TemplateParameterInfo;
 
-      // Convert parameters to array format if it's an object
-      const paramArray = Array.isArray(parameters)
-        ? parameters
-        : Object.values(parameters);
+      const bodyParameters: TemplateBodyParameter[] = [];
+      const buttonParameters: TemplateButtonParameter[] = [];
+      let headerParameter: TemplateHeaderParameter | undefined;
 
-      // Split parameters by component (HEADER vs BODY vs BUTTON)
-      const headerParams: string[] = [];
-      const bodyParams: string[] = [];
-      const buttonParamsMap: Map<number, string[]> = new Map();
+      const getParameterValue = (paramName: string, index: number) => {
+        if (Array.isArray(parameters)) {
+          return parameters[index];
+        }
+        return parameters[paramName];
+      };
 
       typedParamInfo.parameters.forEach((paramDef, index) => {
-        const value = Array.isArray(parameters)
-          ? parameters[index]
-          : parameters[paramDef.name];
+        const rawValue = getParameterValue(paramDef.name, index);
+        if (rawValue === undefined || rawValue === null) {
+          return;
+        }
+
+        const textValue = String(rawValue);
+        if (!textValue.trim()) {
+          return;
+        }
 
         if (paramDef.component === 'HEADER') {
-          headerParams.push(String(value));
-        } else if (paramDef.component === 'BODY') {
-          bodyParams.push(String(value));
-        } else if (paramDef.component === 'BUTTON' && paramDef.buttonIndex !== undefined) {
-          if (!buttonParamsMap.has(paramDef.buttonIndex)) {
-            buttonParamsMap.set(paramDef.buttonIndex, []);
+          if (!headerParameter) {
+            headerParameter = {
+              type: 'text',
+              text: textValue
+            };
           }
-          buttonParamsMap.get(paramDef.buttonIndex)!.push(String(value));
+          return;
+        }
+
+        if (paramDef.component === 'BODY') {
+          bodyParameters.push({
+            type: 'text',
+            text: textValue
+          });
+          return;
+        }
+
+        if (paramDef.component === 'BUTTON' && typeof paramDef.buttonIndex === 'number') {
+          let button = buttonParameters.find((btn) => btn.index === paramDef.buttonIndex);
+          if (!button) {
+            button = {
+              type: 'button',
+              subType: 'url',
+              index: paramDef.buttonIndex,
+              parameters: []
+            } as TemplateButtonParameter;
+            buttonParameters.push(button);
+          }
+
+          button.parameters.push({
+            type: 'text',
+            text: textValue
+          });
         }
       });
 
-      if (headerParams.length > 0) {
-        templateOptions.header = headerParams.map(param => ({
-          type: 'text',
-          text: param
-        }));
+      if (headerParameter) {
+        templateOptions.header = headerParameter;
       }
 
-      if (bodyParams.length > 0) {
-        templateOptions.body = bodyParams.map(param => ({
-          type: 'text',
-          text: param
-        }));
+      if (bodyParameters.length > 0) {
+        templateOptions.body = bodyParameters;
       }
 
-      if (buttonParamsMap.size > 0) {
-        templateOptions.buttons = [];
-        buttonParamsMap.forEach((params, buttonIndex) => {
-          templateOptions.buttons!.push({
-            type: 'button',
-            subType: 'url',
-            index: buttonIndex,
-            parameters: params.map(param => ({
-              type: 'text',
-              text: param
-            }))
-          });
-        });
+      if (buttonParameters.length > 0) {
+        templateOptions.buttons = buttonParameters;
       }
     }
 
-    // Build template payload
-    const templatePayload = buildTemplateSendPayload(templateOptions);
+    const templatePayload = buildTemplateSendPayload(templateOptions) as TemplatePayload;
 
     // Send template message
     const result = await whatsappClient.messages.sendTemplate({

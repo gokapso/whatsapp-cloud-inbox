@@ -131,7 +131,7 @@ export function TemplateParametersDialog({
 
         <ScrollArea className="max-h-[400px] pr-4">
           <div className="space-y-4">
-            {parameterInfo.parameters.map((param, index) => (
+            {parameterInfo.parameters.map((param) => (
               <div key={param.name} className="space-y-2">
                 <div className="flex items-center gap-2">
                   <Label htmlFor={param.name} className="text-[#111b21]">

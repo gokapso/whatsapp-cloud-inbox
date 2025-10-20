@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -16,12 +16,17 @@ type Props = {
 export function MediaMessage({ mediaId, messageType, caption, filename, isOutbound }: Props) {
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+
+  const handleLoadError = useCallback(() => {
+    setLoadFailed(true);
+  }, []);
 
   useEffect(() => {
     // Set the media URL to point to our proxy endpoint
     setMediaUrl(`/api/media/${mediaId}`);
     setLoading(false);
+    setLoadFailed(false);
   }, [mediaId]);
 
   if (loading) {
@@ -32,7 +37,7 @@ export function MediaMessage({ mediaId, messageType, caption, filename, isOutbou
     );
   }
 
-  if (error || !mediaUrl) {
+  if (loadFailed || !mediaUrl) {
     return (
       <div className="w-64 h-48 bg-muted rounded flex items-center justify-center">
         <p className={cn('text-sm', isOutbound ? 'text-green-100' : 'text-muted-foreground')}>
@@ -49,6 +54,7 @@ export function MediaMessage({ mediaId, messageType, caption, filename, isOutbou
           src={mediaUrl}
           alt={caption || 'Image'}
           className="rounded max-w-full h-auto max-h-96"
+          onError={handleLoadError}
         />
       )}
 
@@ -57,11 +63,12 @@ export function MediaMessage({ mediaId, messageType, caption, filename, isOutbou
           src={mediaUrl}
           controls
           className="rounded max-w-full h-auto max-h-96"
+          onError={handleLoadError}
         />
       )}
 
       {messageType === 'audio' && (
-        <audio src={mediaUrl} controls className="w-full" />
+        <audio src={mediaUrl} controls className="w-full" onError={handleLoadError} />
       )}
 
       {messageType === 'document' && (

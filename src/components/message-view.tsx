@@ -11,9 +11,9 @@ import { useAutoPolling } from '@/hooks/use-auto-polling';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import type { MediaData } from '@kapso/whatsapp-cloud-api';
 
 type Message = {
   id: string;
@@ -25,8 +25,9 @@ type Message = {
   hasMedia: boolean;
   mediaData?: {
     url: string;
-    mimeType: string;
-  };
+    contentType?: string;
+    filename?: string;
+  } | (MediaData & { url: string });
   reactionEmoji?: string | null;
   reactedToMessageId?: string | null;
   filename?: string | null;
@@ -139,45 +140,6 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  useEffect(() => {
-    if (conversationId) {
-      setLoading(true);
-      fetchMessages();
-    }
-  }, [conversationId]);
-
-  useEffect(() => {
-    // Only auto-scroll if user is near bottom
-    if (isNearBottom) {
-      scrollToBottom();
-    }
-  }, [messages, isNearBottom]);
-
-  useEffect(() => {
-    setCanSendRegularMessage(isWithin24HourWindow(messages));
-  }, [messages]);
-
-  // Track if user is near bottom of scroll
-  useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
-
-    const handleScroll = () => {
-      const viewport = container.querySelector('[data-radix-scroll-area-viewport]');
-      if (!viewport) return;
-
-      const { scrollTop, scrollHeight, clientHeight } = viewport;
-      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-      setIsNearBottom(distanceFromBottom < 100);
-    };
-
-    const viewport = container.querySelector('[data-radix-scroll-area-viewport]');
-    if (viewport) {
-      viewport.addEventListener('scroll', handleScroll);
-      return () => viewport.removeEventListener('scroll', handleScroll);
-    }
-  }, []);
-
   const fetchMessages = useCallback(async () => {
     if (!conversationId) return;
 
@@ -217,13 +179,52 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
     }
   }, [conversationId]);
 
+  useEffect(() => {
+    if (conversationId) {
+      setLoading(true);
+      fetchMessages();
+    }
+  }, [conversationId, fetchMessages]);
+
+  useEffect(() => {
+    // Only auto-scroll if user is near bottom
+    if (isNearBottom) {
+      scrollToBottom();
+    }
+  }, [messages, isNearBottom]);
+
+  useEffect(() => {
+    setCanSendRegularMessage(isWithin24HourWindow(messages));
+  }, [messages]);
+
+  // Track if user is near bottom of scroll
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const viewport = container.querySelector('[data-radix-scroll-area-viewport]');
+      if (!viewport) return;
+
+      const { scrollTop, scrollHeight, clientHeight } = viewport;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      setIsNearBottom(distanceFromBottom < 100);
+    };
+
+    const viewport = container.querySelector('[data-radix-scroll-area-viewport]');
+    if (viewport) {
+      viewport.addEventListener('scroll', handleScroll);
+      return () => viewport.removeEventListener('scroll', handleScroll);
+    }
+  }, []);
+
   const handleRefresh = () => {
     setRefreshing(true);
     fetchMessages();
   };
 
   // Auto-polling for messages (every 5 seconds)
-  const { isPolling } = useAutoPolling({
+  useAutoPolling({
     interval: 5000,
     enabled: !!conversationId,
     onPoll: fetchMessages
