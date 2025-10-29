@@ -4,7 +4,7 @@ A WhatsApp Web-style inbox built with Next.js for the WhatsApp Cloud API. Send m
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fgokapso%2Fwhatsapp-cloud-inbox&env=PHONE_NUMBER_ID,KAPSO_API_KEY,WABA_ID&envDescription=Get%20these%20credentials%20from%20app.kapso.ai&envLink=https%3A%2F%2Fapp.kapso.ai)
 
-![WhatsApp Cloud Inbox](.github/screenshots/kapso-whatsapp-inbox.png)
+![WhatsApp Cloud Inbox](https://cdn.jsdelivr.net/gh/gokapso/whatsapp-cloud-inbox@main/assets/kapso-whatsapp-inbox.png)
 
 ## Features
 
