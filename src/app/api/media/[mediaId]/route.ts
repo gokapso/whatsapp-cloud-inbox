@@ -13,9 +13,6 @@ export async function GET(
       phoneNumberId: PHONE_NUMBER_ID
     });
 
-    // Test: SDK v0.0.6 has auth parameter - try forcing no auth headers
-    console.log('[Media API Test] Trying download with auth: "never"');
-
     const buffer = await whatsappClient.media.download({
       mediaId,
       phoneNumberId: PHONE_NUMBER_ID,
@@ -27,15 +24,6 @@ export async function GET(
       return buffer;
     }
 
-    // Check if buffer is ArrayBuffer for logging
-    if (buffer instanceof ArrayBuffer) {
-      console.log('[Media API Test] Download succeeded with auth: "never"', {
-        expectedSize: metadata.fileSize,
-        actualSize: buffer.byteLength,
-        match: buffer.byteLength === parseInt(metadata.fileSize || '0')
-      });
-    }
-
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': metadata.mimeType || 'application/octet-stream',
@@ -43,7 +31,6 @@ export async function GET(
       }
     });
   } catch (error) {
-    console.error('[Media API] Error:', error);
     return NextResponse.json(
       {
         error: 'Failed to fetch media',

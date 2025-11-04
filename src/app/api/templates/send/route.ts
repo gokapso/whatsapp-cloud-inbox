@@ -56,8 +56,9 @@ export async function POST(request: Request) {
           if (!headerParameter) {
             headerParameter = {
               type: 'text',
-              text: textValue
-            };
+              text: textValue,
+              parameter_name: paramDef.name
+            } as TemplateHeaderParameter;
           }
           return;
         }
@@ -65,8 +66,9 @@ export async function POST(request: Request) {
         if (paramDef.component === 'BODY') {
           bodyParameters.push({
             type: 'text',
-            text: textValue
-          });
+            text: textValue,
+            parameter_name: paramDef.name
+          } as TemplateBodyParameter);
           return;
         }
 
@@ -84,8 +86,9 @@ export async function POST(request: Request) {
 
           button.parameters.push({
             type: 'text',
-            text: textValue
-          });
+            text: textValue,
+            parameter_name: paramDef.name
+          } as any);
         }
       });
 
