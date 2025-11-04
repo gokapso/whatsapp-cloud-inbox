@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { format, isValid, isToday, isYesterday, differenceInHours } from 'date-fns';
-import { RefreshCw, Paperclip, Send, X, AlertCircle, MessageSquare, XCircle, ListTree } from 'lucide-react';
+import { RefreshCw, Paperclip, Send, X, AlertCircle, MessageSquare, XCircle, ListTree, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MediaMessage } from '@/components/media-message';
 import { TemplateSelectorDialog } from '@/components/template-selector-dialog';
@@ -117,9 +117,11 @@ type Props = {
   phoneNumber?: string;
   contactName?: string;
   onTemplateSent?: (phoneNumber: string) => Promise<void>;
+  onBack?: () => void;
+  isVisible?: boolean;
 };
 
-export function MessageView({ conversationId, phoneNumber, contactName, onTemplateSent }: Props) {
+export function MessageView({ conversationId, phoneNumber, contactName, onTemplateSent, onBack, isVisible = false }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -298,7 +300,10 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
 
   if (!conversationId) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-muted/50">
+      <div className={cn(
+        "flex-1 flex items-center justify-center bg-muted/50",
+        !isVisible && "hidden md:flex"
+      )}>
         <p className="text-muted-foreground">Select a conversation to view messages</p>
       </div>
     );
@@ -306,12 +311,27 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
 
   if (loading) {
     return (
-      <div className="flex-1 flex flex-col bg-[#efeae2]">
+      <div className={cn(
+        "flex-1 flex flex-col bg-[#efeae2]",
+        !isVisible && "hidden md:flex"
+      )}>
         <div className="p-3 border-b border-[#d1d7db] bg-[#f0f2f5]">
           <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <Skeleton className="h-5 w-40 mb-1" />
-              <Skeleton className="h-3 w-32" />
+            <div className="flex items-center gap-2 flex-1">
+              {onBack && (
+                <Button
+                  onClick={onBack}
+                  variant="ghost"
+                  size="icon"
+                  className="md:hidden text-[#667781] hover:bg-[#f0f2f5]"
+                >
+                  <ArrowLeft className="h-5 w-5" />
+                </Button>
+              )}
+              <div className="flex-1">
+                <Skeleton className="h-5 w-40 mb-1" />
+                <Skeleton className="h-3 w-32" />
+              </div>
             </div>
             <Skeleton className="h-9 w-24 rounded-lg" />
           </div>
@@ -336,14 +356,29 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-[#efeae2]">
+    <div className={cn(
+      "flex-1 flex flex-col bg-[#efeae2]",
+      !isVisible && "hidden md:flex"
+    )}>
       <div className="p-3 border-b border-[#d1d7db] bg-[#f0f2f5]">
         <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-medium text-[#111b21]">{contactName || phoneNumber || 'Conversation'}</h2>
-            {contactName && phoneNumber && (
-              <p className="text-xs text-[#667781]">{phoneNumber}</p>
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            {onBack && (
+              <Button
+                onClick={onBack}
+                variant="ghost"
+                size="icon"
+                className="md:hidden text-[#667781] hover:bg-[#f0f2f5] flex-shrink-0"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
             )}
+            <div className="flex-1 min-w-0">
+              <h2 className="text-base font-medium text-[#111b21] truncate">{contactName || phoneNumber || 'Conversation'}</h2>
+              {contactName && phoneNumber && (
+                <p className="text-xs text-[#667781] truncate">{phoneNumber}</p>
+              )}
+            </div>
           </div>
           <Button
             onClick={handleRefresh}

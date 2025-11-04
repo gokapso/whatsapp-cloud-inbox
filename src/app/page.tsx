@@ -27,18 +27,25 @@ export default function Home() {
     }
   };
 
+  const handleBackToList = () => {
+    setSelectedConversation(undefined);
+  };
+
   return (
     <div className="h-screen flex">
       <ConversationList
         ref={conversationListRef}
         onSelectConversation={setSelectedConversation}
         selectedConversationId={selectedConversation?.id}
+        isHidden={!!selectedConversation}
       />
       <MessageView
         conversationId={selectedConversation?.id}
         phoneNumber={selectedConversation?.phoneNumber}
         contactName={selectedConversation?.contactName}
         onTemplateSent={handleTemplateSent}
+        onBack={handleBackToList}
+        isVisible={!!selectedConversation}
       />
     </div>
   );
