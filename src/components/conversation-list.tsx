@@ -60,6 +60,7 @@ function getAvatarInitials(contactName?: string, phoneNumber?: string): string {
 type Props = {
   onSelectConversation: (conversation: Conversation) => void;
   selectedConversationId?: string;
+  isHidden?: boolean;
 };
 
 export type ConversationListRef = {
@@ -68,7 +69,7 @@ export type ConversationListRef = {
 };
 
 export const ConversationList = forwardRef<ConversationListRef, Props>(
-  ({ onSelectConversation, selectedConversationId }, ref) => {
+  ({ onSelectConversation, selectedConversationId, isHidden = false }, ref) => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -133,7 +134,10 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
 
   if (loading) {
     return (
-      <div className="w-full md:w-96 border-r border-[#d1d7db] bg-white flex flex-col">
+      <div className={cn(
+        "w-full md:w-96 border-r border-[#d1d7db] bg-white flex flex-col",
+        isHidden && "hidden md:flex"
+      )}>
         <div className="p-4 border-b border-[#d1d7db] bg-[#f0f2f5]">
           <div className="flex items-center justify-between mb-3">
             <Skeleton className="h-7 w-20" />
@@ -157,7 +161,10 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
   }
 
   return (
-    <div className="w-full md:w-96 border-r border-[#d1d7db] bg-white flex flex-col">
+    <div className={cn(
+      "w-full md:w-96 border-r border-[#d1d7db] bg-white flex flex-col",
+      isHidden && "hidden md:flex"
+    )}>
       <div className="p-4 border-b border-[#d1d7db] bg-[#f0f2f5]">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
