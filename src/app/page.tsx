@@ -32,7 +32,7 @@ export default function Home() {
   };
 
   return (
-    <div className="h-screen flex">
+    <div className="h-dvh flex">
       <ConversationList
         ref={conversationListRef}
         onSelectConversation={setSelectedConversation}

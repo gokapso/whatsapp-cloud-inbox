@@ -135,10 +135,10 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
   if (loading) {
     return (
       <div className={cn(
-        "w-full md:w-96 border-r border-[#d1d7db] bg-white flex flex-col",
+        "w-full md:w-96 md:border-r border-[#d1d7db] bg-white flex flex-col",
         isHidden && "hidden md:flex"
       )}>
-        <div className="p-4 border-b border-[#d1d7db] bg-[#f0f2f5]">
+        <div className="p-4 border-b border-[#d1d7db] bg-[#f0f2f5] safe-area-top">
           <div className="flex items-center justify-between mb-3">
             <Skeleton className="h-7 w-20" />
             <Skeleton className="h-9 w-24" />
@@ -162,10 +162,10 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
 
   return (
     <div className={cn(
-      "w-full md:w-96 border-r border-[#d1d7db] bg-white flex flex-col",
+      "w-full md:w-96 md:border-r border-[#d1d7db] bg-white flex flex-col",
       isHidden && "hidden md:flex"
     )}>
-      <div className="p-4 border-b border-[#d1d7db] bg-[#f0f2f5]">
+      <div className="p-4 border-b border-[#d1d7db] bg-[#f0f2f5] safe-area-top">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold text-[#111b21]">Chats</h1>

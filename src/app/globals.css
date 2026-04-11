@@ -124,6 +124,16 @@
   }
 }
 
+/* Safe area insets for notched phones (iPhone X+) */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
 /* Fix ScrollArea table layout breaking text truncation */
 [data-radix-scroll-area-viewport] > div {
   display: block !important;

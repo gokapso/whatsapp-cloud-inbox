@@ -315,7 +315,7 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
         "flex-1 flex flex-col bg-[#efeae2]",
         !isVisible && "hidden md:flex"
       )}>
-        <div className="p-3 border-b border-[#d1d7db] bg-[#f0f2f5]">
+        <div className="p-3 border-b border-[#d1d7db] bg-[#f0f2f5] safe-area-top">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 flex-1">
               {onBack && (
@@ -341,7 +341,7 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <div key={i} className={cn('flex mb-2', i % 2 === 0 ? 'justify-end' : 'justify-start')}>
                 <div className={cn(
-                  'max-w-[70%] rounded-lg px-3 py-2 shadow-sm',
+                  'max-w-[85%] md:max-w-[70%] rounded-lg px-3 py-2 shadow-sm',
                   i % 2 === 0 ? 'rounded-br-none' : 'rounded-bl-none'
                 )}>
                   <Skeleton className="h-4 mb-2" style={{ width: `${Math.random() * 150 + 150}px` }} />
@@ -360,7 +360,7 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
       "flex-1 flex flex-col bg-[#efeae2]",
       !isVisible && "hidden md:flex"
     )}>
-      <div className="p-3 border-b border-[#d1d7db] bg-[#f0f2f5]">
+      <div className="p-3 border-b border-[#d1d7db] bg-[#f0f2f5] safe-area-top">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 flex-1 min-w-0">
             {onBack && (
@@ -419,7 +419,7 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
                 >
                   <div
                     className={cn(
-                      'max-w-[70%] rounded-lg px-3 py-2 relative shadow-sm',
+                      'max-w-[85%] md:max-w-[70%] rounded-lg px-3 py-2 relative shadow-sm',
                       message.direction === 'outbound'
                         ? 'bg-[#d9fdd3] text-[#111b21] rounded-br-none'
                         : 'bg-white text-[#111b21] rounded-bl-none'
@@ -534,7 +534,7 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
         </div>
       </ScrollArea>
 
-      <div className="border-t border-[#d1d7db] bg-[#f0f2f5]">
+      <div className="border-t border-[#d1d7db] bg-[#f0f2f5] safe-area-bottom">
         {canSendRegularMessage ? (
           <>
             {selectedFile && (
