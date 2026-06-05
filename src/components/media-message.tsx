@@ -31,7 +31,7 @@ export function MediaMessage({ mediaId, messageType, caption, filename, isOutbou
 
   if (loading) {
     return (
-      <div className="w-64 h-48 rounded flex items-center justify-center">
+      <div className="flex h-48 w-full max-w-64 items-center justify-center rounded">
         <Skeleton className="w-full h-full" />
       </div>
     );
@@ -39,7 +39,7 @@ export function MediaMessage({ mediaId, messageType, caption, filename, isOutbou
 
   if (loadFailed || !mediaUrl) {
     return (
-      <div className="w-64 h-48 bg-muted rounded flex items-center justify-center">
+      <div className="flex h-48 w-full max-w-64 items-center justify-center rounded bg-muted">
         <p className={cn('text-sm', isOutbound ? 'text-green-100' : 'text-muted-foreground')}>
           Media unavailable
         </p>
@@ -53,7 +53,7 @@ export function MediaMessage({ mediaId, messageType, caption, filename, isOutbou
         <img
           src={mediaUrl}
           alt={caption || 'Image'}
-          className="rounded max-w-full h-auto max-h-96"
+          className="h-auto max-h-96 max-w-full rounded outline outline-1 [outline-color:var(--chat-media-outline)]"
           onError={handleLoadError}
         />
       )}
@@ -62,7 +62,7 @@ export function MediaMessage({ mediaId, messageType, caption, filename, isOutbou
         <video
           src={mediaUrl}
           controls
-          className="rounded max-w-full h-auto max-h-96"
+          className="h-auto max-h-96 max-w-full rounded outline outline-1 [outline-color:var(--chat-media-outline)]"
           onError={handleLoadError}
         />
       )}
@@ -76,10 +76,10 @@ export function MediaMessage({ mediaId, messageType, caption, filename, isOutbou
           href={mediaUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-2 text-sm underline cursor-pointer hover:opacity-80 transition-opacity text-[#00a884]"
+          className="flex min-w-0 items-center gap-2 text-sm text-primary underline transition-opacity hover:opacity-80"
         >
-          <FileText className="h-4 w-4" />
-          {filename || 'Download document'}
+          <FileText className="h-4 w-4 flex-shrink-0" />
+          <span className="truncate">{filename || 'Download document'}</span>
         </a>
       )}
     </div>

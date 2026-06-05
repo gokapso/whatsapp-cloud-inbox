@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { format, isValid, isToday, isYesterday, differenceInHours } from 'date-fns';
-import { RefreshCw, Paperclip, Send, X, AlertCircle, MessageSquare, XCircle, ListTree, ArrowLeft } from 'lucide-react';
+import { format, formatDistanceToNow, isValid, isToday, isYesterday, differenceInHours } from 'date-fns';
+import { RefreshCw, Paperclip, Send, X, AlertCircle, MessageSquare, XCircle, ListTree, ArrowLeft, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MediaMessage } from '@/components/media-message';
 import { TemplateSelectorDialog } from '@/components/template-selector-dialog';
@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { ThemeToggle } from '@/components/theme-toggle';
 import type { MediaData } from '@kapso/whatsapp-cloud-api';
 
 type Message = {
@@ -65,6 +66,50 @@ function formatDateDivider(timestamp: string): string {
   }
 }
 
+function formatLastSeen(timestamp?: string): string | null {
+  if (!timestamp) return null;
+
+  try {
+    const date = new Date(timestamp);
+    if (!isValid(date)) return null;
+
+    return formatDistanceToNow(date, { addSuffix: true });
+  } catch {
+    return null;
+  }
+}
+
+function formatDisplayPhoneNumber(phoneNumber?: string): string | null {
+  if (!phoneNumber) return null;
+
+  const trimmedPhoneNumber = phoneNumber.trim();
+  if (!trimmedPhoneNumber) return null;
+  if (trimmedPhoneNumber.startsWith('+')) return trimmedPhoneNumber;
+  if (/^\d+$/.test(trimmedPhoneNumber)) return `+${trimmedPhoneNumber}`;
+
+  return trimmedPhoneNumber;
+}
+
+function MessageStatusChecks({ status }: { status: string }) {
+  if (status === 'read' || status === 'delivered') {
+    return (
+      <span
+        aria-label={status === 'read' ? 'Read' : 'Delivered'}
+        className="relative inline-flex h-3.5 w-[1.125rem] items-center text-[var(--chat-check)]"
+      >
+        <Check aria-hidden="true" className="absolute left-0 top-0 size-3.5" />
+        <Check aria-hidden="true" className="absolute right-0 top-0 size-3.5" />
+      </span>
+    );
+  }
+
+  if (status === 'sent') {
+    return <Check aria-label="Sent" className="size-3.5 text-[var(--chat-check)]" />;
+  }
+
+  return null;
+}
+
 function shouldShowDateDivider(currentMsg: Message, prevMsg: Message | null): boolean {
   if (!prevMsg) return true;
 
@@ -112,16 +157,19 @@ function getDisabledInputMessage(messages: Message[]): string {
   return "Last message was over 24 hours ago. Send a template message or wait for the user to message you.";
 }
 
+const MESSAGE_SKELETON_WIDTHS = [280, 180, 320, 210, 260, 170];
+
 type Props = {
   conversationId?: string;
   phoneNumber?: string;
   contactName?: string;
+  lastActiveAt?: string;
   onTemplateSent?: (phoneNumber: string) => Promise<void>;
   onBack?: () => void;
   isVisible?: boolean;
 };
 
-export function MessageView({ conversationId, phoneNumber, contactName, onTemplateSent, onBack, isVisible = false }: Props) {
+export function MessageView({ conversationId, phoneNumber, contactName, lastActiveAt, onTemplateSent, onBack, isVisible = false }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -137,6 +185,8 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const previousMessageCountRef = useRef(0);
+  const lastSeenText = formatLastSeen(lastActiveAt);
+  const displayPhoneNumber = formatDisplayPhoneNumber(phoneNumber);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -301,10 +351,12 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
   if (!conversationId) {
     return (
       <div className={cn(
-        "flex-1 flex items-center justify-center bg-muted/50",
+        "flex min-h-0 min-w-0 flex-1 items-center justify-center bg-muted/50 p-6 text-center",
         !isVisible && "hidden md:flex"
       )}>
-        <p className="text-muted-foreground">Select a conversation to view messages</p>
+        <p className="max-w-sm text-sm leading-6 text-muted-foreground">
+          Select a conversation to view messages
+        </p>
       </div>
     );
   }
@@ -312,18 +364,19 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
   if (loading) {
     return (
       <div className={cn(
-        "flex-1 flex flex-col bg-[#efeae2]",
+        "flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--chat-canvas)]",
         !isVisible && "hidden md:flex"
       )}>
-        <div className="p-3 border-b border-[#d1d7db] bg-[#f0f2f5] safe-area-top">
-          <div className="flex items-center justify-between">
+        <div className="border-b border-[var(--chat-border-strong)] bg-[var(--chat-toolbar)] p-2.5 safe-area-top sm:p-3">
+          <div className="flex items-center justify-between pt-1">
             <div className="flex items-center gap-2 flex-1">
               {onBack && (
                 <Button
                   onClick={onBack}
                   variant="ghost"
                   size="icon"
-                  className="md:hidden text-[#667781] hover:bg-[#f0f2f5]"
+                  className="size-11 text-muted-foreground hover:bg-[var(--chat-hover)] md:hidden"
+                  aria-label="Back to conversations"
                 >
                   <ArrowLeft className="h-5 w-5" />
                 </Button>
@@ -333,18 +386,24 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
                 <Skeleton className="h-3 w-32" />
               </div>
             </div>
-            <Skeleton className="h-9 w-24 rounded-lg" />
+            <div className="flex items-center gap-1">
+              <ThemeToggle className="size-11 md:hidden" />
+              <Skeleton className="size-10 rounded-lg" />
+            </div>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-4">
-          <div className="max-w-[900px] mx-auto space-y-3">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-4 lg:p-6">
+          <div className="mx-auto w-full max-w-[900px] space-y-3">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <div key={i} className={cn('flex mb-2', i % 2 === 0 ? 'justify-end' : 'justify-start')}>
                 <div className={cn(
-                  'max-w-[85%] md:max-w-[70%] rounded-lg px-3 py-2 shadow-sm',
+                  'max-w-[min(88%,34rem)] rounded-lg px-3 py-2 shadow-sm sm:max-w-[min(78%,38rem)] lg:max-w-[min(70%,42rem)]',
                   i % 2 === 0 ? 'rounded-br-none' : 'rounded-bl-none'
                 )}>
-                  <Skeleton className="h-4 mb-2" style={{ width: `${Math.random() * 150 + 150}px` }} />
+                  <Skeleton
+                    className="h-4 max-w-full mb-2"
+                    style={{ width: `${MESSAGE_SKELETON_WIDTHS[i - 1]}px` }}
+                  />
                   <Skeleton className="h-3 w-16" />
                 </div>
               </div>
@@ -357,206 +416,216 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
 
   return (
     <div className={cn(
-      "flex-1 flex flex-col bg-[#efeae2]",
+      "flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--chat-canvas)]",
       !isVisible && "hidden md:flex"
     )}>
-      <div className="p-3 border-b border-[#d1d7db] bg-[#f0f2f5] safe-area-top">
-        <div className="flex items-center justify-between">
+      <div className="border-b border-[var(--chat-border-strong)] bg-[var(--chat-toolbar)] p-2.5 safe-area-top sm:p-3">
+        <div className="flex items-center justify-between pt-1">
           <div className="flex items-center gap-2 flex-1 min-w-0">
             {onBack && (
               <Button
                 onClick={onBack}
                 variant="ghost"
                 size="icon"
-                className="md:hidden text-[#667781] hover:bg-[#f0f2f5] flex-shrink-0"
+                className="size-11 flex-shrink-0 text-muted-foreground hover:bg-[var(--chat-hover)] md:hidden"
+                aria-label="Back to conversations"
               >
                 <ArrowLeft className="h-5 w-5" />
               </Button>
             )}
             <div className="flex-1 min-w-0">
-              <h2 className="text-base font-medium text-[#111b21] truncate">{contactName || phoneNumber || 'Conversation'}</h2>
-              {contactName && phoneNumber && (
-                <p className="text-xs text-[#667781] truncate">{phoneNumber}</p>
+              <h2 className="truncate text-sm font-medium text-foreground sm:text-base">{contactName || phoneNumber || 'Conversation'}</h2>
+              {displayPhoneNumber && (
+                <p className="truncate text-xs text-muted-foreground">
+                  {lastSeenText ? `Active · ${lastSeenText} · ${displayPhoneNumber}` : displayPhoneNumber}
+                </p>
               )}
             </div>
           </div>
-          <Button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            variant="ghost"
-            size="icon"
-            className="text-[#667781] hover:bg-[#f0f2f5]"
-          >
-            <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
-          </Button>
+          <div className="flex items-center gap-2">
+            <ThemeToggle className="size-11 md:hidden" />
+            <Button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              variant="ghost"
+              size="icon"
+              className="size-11 text-muted-foreground hover:bg-[var(--chat-hover)] md:size-10"
+              aria-label="Refresh messages"
+              title="Refresh messages"
+            >
+              <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
+            </Button>
+          </div>
         </div>
       </div>
 
-      <ScrollArea ref={messagesContainerRef} className="flex-1 h-0 p-4">
-        <div className="max-w-[900px] mx-auto">
-        {messages.length === 0 ? (
-          <p className="text-center text-muted-foreground">No messages yet</p>
-        ) : (
-          messages.map((message, index) => {
-            const prevMessage = index > 0 ? messages[index - 1] : null;
-            const showDateDivider = shouldShowDateDivider(message, prevMessage);
+      <ScrollArea ref={messagesContainerRef} className="h-0 flex-1 overscroll-contain p-3 sm:p-4 lg:p-6">
+        <div className="mx-auto w-full max-w-[900px]">
+          {messages.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">No messages yet</p>
+          ) : (
+            messages.map((message, index) => {
+              const prevMessage = index > 0 ? messages[index - 1] : null;
+              const showDateDivider = shouldShowDateDivider(message, prevMessage);
 
-            return (
-              <div key={message.id}>
-                {showDateDivider && (
-                  <div className="flex justify-center my-4">
-                    <Badge variant="secondary" className="shadow-sm">
-                      {formatDateDivider(message.createdAt)}
-                    </Badge>
-                  </div>
-                )}
-
-                <div
-                  className={cn(
-                    'flex mb-2',
-                    message.direction === 'outbound' ? 'justify-end' : 'justify-start'
+              return (
+                <div key={message.id}>
+                  {showDateDivider && (
+                    <div className="flex justify-center my-4">
+                      <Badge variant="secondary" className="shadow-sm">
+                        {formatDateDivider(message.createdAt)}
+                      </Badge>
+                    </div>
                   )}
-                >
+
                   <div
                     className={cn(
-                      'max-w-[85%] md:max-w-[70%] rounded-lg px-3 py-2 relative shadow-sm',
-                      message.direction === 'outbound'
-                        ? 'bg-[#d9fdd3] text-[#111b21] rounded-br-none'
-                        : 'bg-white text-[#111b21] rounded-bl-none'
+                      'flex mb-2',
+                      message.direction === 'outbound' ? 'justify-end' : 'justify-start'
                     )}
                   >
-                    {message.hasMedia && message.mediaData?.url ? (
-                      <div className="mb-2">
-                        {message.messageType === 'sticker' ? (
-                          <img
-                            src={message.mediaData.url}
-                            alt="Sticker"
-                            className="max-w-[150px] max-h-[150px] h-auto"
+                    <div
+                      className={cn(
+                        'relative max-w-[min(88%,34rem)] rounded-lg px-3 py-2 shadow-sm sm:max-w-[min(78%,38rem)] lg:max-w-[min(70%,42rem)]',
+                        message.direction === 'outbound'
+                          ? 'bg-[var(--chat-bubble-outgoing)] text-foreground rounded-br-none'
+                          : 'bg-[var(--chat-bubble-incoming)] text-foreground rounded-bl-none'
+                      )}
+                    >
+                      {message.hasMedia && message.mediaData?.url ? (
+                        <div className="mb-2">
+                          {message.messageType === 'sticker' ? (
+                            <img
+                              src={message.mediaData.url}
+                              alt="Sticker"
+                              className="h-auto max-h-[150px] max-w-[150px]"
+                            />
+                          ) : message.mediaData.contentType?.startsWith('image/') || message.messageType === 'image' ? (
+                            <img
+                              src={message.mediaData.url}
+                              alt="Media"
+                              className="h-auto max-h-96 max-w-full rounded outline outline-1 [outline-color:var(--chat-media-outline)]"
+                            />
+                          ) : message.mediaData.contentType?.startsWith('video/') || message.messageType === 'video' ? (
+                            <video
+                              src={message.mediaData.url}
+                              controls
+                              className="h-auto max-h-96 max-w-full rounded outline outline-1 [outline-color:var(--chat-media-outline)]"
+                            />
+                          ) : message.mediaData.contentType?.startsWith('audio/') || message.messageType === 'audio' ? (
+                            <audio src={message.mediaData.url} controls className="w-full" />
+                          ) : (
+                            <a
+                              href={message.mediaData.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={cn(
+                                'flex min-w-0 items-center gap-2 text-sm underline hover:opacity-80',
+                                message.direction === 'outbound' ? 'text-primary' : 'text-primary'
+                              )}
+                            >
+                              <Paperclip className="h-4 w-4 flex-shrink-0" />
+                              <span className="truncate">{message.mediaData.filename || message.filename || 'Download file'}</span>
+                            </a>
+                          )}
+                        </div>
+                      ) : message.metadata?.mediaId && message.messageType ? (
+                        <div className="mb-2">
+                          <MediaMessage
+                            mediaId={message.metadata.mediaId}
+                            messageType={message.messageType}
+                            caption={message.caption}
+                            filename={message.filename}
+                            isOutbound={message.direction === 'outbound'}
                           />
-                        ) : message.mediaData.contentType?.startsWith('image/') || message.messageType === 'image' ? (
-                          <img
-                            src={message.mediaData.url}
-                            alt="Media"
-                            className="rounded max-w-full h-auto max-h-96"
-                          />
-                        ) : message.mediaData.contentType?.startsWith('video/') || message.messageType === 'video' ? (
-                          <video
-                            src={message.mediaData.url}
-                            controls
-                            className="rounded max-w-full h-auto max-h-96"
-                          />
-                        ) : message.mediaData.contentType?.startsWith('audio/') || message.messageType === 'audio' ? (
-                          <audio src={message.mediaData.url} controls className="w-full" />
-                        ) : (
-                          <a
-                            href={message.mediaData.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={cn(
-                              'flex items-center gap-2 text-sm underline cursor-pointer hover:opacity-80',
-                              message.direction === 'outbound' ? 'text-[#00a884]' : 'text-[#00a884]'
-                            )}
-                          >
-                            📎 {message.mediaData.filename || message.filename || 'Download file'}
-                          </a>
-                        )}
-                      </div>
-                    ) : message.metadata?.mediaId && message.messageType ? (
-                      <div className="mb-2">
-                        <MediaMessage
-                          mediaId={message.metadata.mediaId}
-                          messageType={message.messageType}
-                          caption={message.caption}
-                          filename={message.filename}
-                          isOutbound={message.direction === 'outbound'}
-                        />
-                      </div>
-                    ) : null}
+                        </div>
+                      ) : null}
 
-                    {message.caption && (
-                      <p className="text-sm break-words whitespace-pre-wrap mb-1">
-                        {message.caption}
-                      </p>
-                    )}
-
-                    {message.content && message.content !== '[Image attached]' && (
-                      <p className="text-sm break-words whitespace-pre-wrap">
-                        {message.content}
-                      </p>
-                    )}
-
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span className="text-[11px] text-[#667781]">
-                        {formatMessageTime(message.createdAt)}
-                      </span>
-
-                      {message.messageType && (
-                        <span className="text-[11px] text-[#667781] opacity-60">
-                          · {message.messageType}
-                        </span>
+                      {message.caption && (
+                        <p className="text-sm break-words whitespace-pre-wrap mb-1">
+                          {message.caption}
+                        </p>
                       )}
 
-                      {message.direction === 'outbound' && message.status && (
-                        <>
+                      {message.content && message.content !== '[Image attached]' && (
+                        <p className="text-sm break-words whitespace-pre-wrap">
+                          {message.content}
+                        </p>
+                      )}
+
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] tabular-nums text-muted-foreground">
+                          {formatMessageTime(message.createdAt)}
+                        </span>
+
+                        {message.messageType && (
+                          <span className="text-[11px] text-muted-foreground opacity-60">
+                            &middot; {message.messageType}
+                          </span>
+                        )}
+
+                        {message.direction === 'outbound' && message.status && (
+                          <>
                           {message.status === 'failed' ? (
                             <XCircle className="h-3.5 w-3.5 text-red-500" />
                           ) : (
-                            <span className="text-xs text-[#53bdeb]">
-                              {message.status === 'read' ? '✓✓' :
-                               message.status === 'delivered' ? '✓✓' :
-                               message.status === 'sent' ? '✓' : ''}
-                            </span>
+                            <MessageStatusChecks status={message.status} />
                           )}
-                        </>
+                          </>
+                        )}
+                      </div>
+
+                      {message.direction === 'outbound' && message.status === 'failed' && (
+                        <div className="mt-1">
+                          <span className="text-[11px] text-red-500 flex items-center gap-1">
+                            Not delivered
+                          </span>
+                        </div>
+                      )}
+
+                      {message.reactionEmoji && (
+                        <div className="absolute -bottom-2 -right-2 bg-background rounded-full px-1.5 py-0.5 text-sm shadow-sm border">
+                          {message.reactionEmoji}
+                        </div>
                       )}
                     </div>
-
-                    {message.direction === 'outbound' && message.status === 'failed' && (
-                      <div className="mt-1">
-                        <span className="text-[11px] text-red-500 flex items-center gap-1">
-                          Not delivered
-                        </span>
-                      </div>
-                    )}
-
-                    {message.reactionEmoji && (
-                      <div className="absolute -bottom-2 -right-2 bg-background rounded-full px-1.5 py-0.5 text-sm shadow-sm border">
-                        {message.reactionEmoji}
-                      </div>
-                    )}
                   </div>
                 </div>
-              </div>
-            );
-          })
-        )}
-        <div ref={messagesEndRef} />
+              );
+            })
+          )}
+          <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
 
-      <div className="border-t border-[#d1d7db] bg-[#f0f2f5] safe-area-bottom">
+      <div className="border-t border-[var(--chat-border-strong)] bg-[var(--chat-toolbar)] safe-area-bottom">
         {canSendRegularMessage ? (
           <>
             {selectedFile && (
-              <div className="p-3 border-b border-[#d1d7db] bg-white">
-                <div className="flex items-start gap-3">
+              <div className="border-b border-[var(--chat-border-strong)] bg-[var(--chat-surface)] p-3">
+                <div className="mx-auto flex w-full max-w-[900px] items-start gap-3">
                   {filePreview ? (
-                    <img src={filePreview} alt="Preview" className="w-16 h-16 object-cover rounded" />
+                    <img
+                      src={filePreview}
+                      alt="Preview"
+                      className="size-16 rounded object-cover outline outline-1 [outline-color:var(--chat-media-outline)]"
+                    />
                   ) : (
-                    <div className="w-16 h-16 bg-[#f0f2f5] rounded flex items-center justify-center">
-                      <Paperclip className="h-6 w-6 text-[#667781]" />
+                    <div className="flex size-16 items-center justify-center rounded bg-[var(--chat-hover)]">
+                      <Paperclip className="h-6 w-6 text-muted-foreground" />
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-[#111b21] truncate">{selectedFile.name}</p>
-                    <p className="text-xs text-[#667781]">{(selectedFile.size / 1024).toFixed(1)} KB</p>
+                    <p className="text-sm font-medium text-foreground truncate">{selectedFile.name}</p>
+                    <p className="text-xs tabular-nums text-muted-foreground">{(selectedFile.size / 1024).toFixed(1)} KB</p>
                   </div>
                   <Button
                     onClick={handleRemoveFile}
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="text-[#667781]"
+                    className="size-11 text-muted-foreground md:size-10"
+                    aria-label="Remove selected file"
                   >
                     <X className="h-4 w-4" />
                   </Button>
@@ -564,7 +633,7 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
               </div>
             )}
 
-            <form onSubmit={handleSendMessage} className="p-3 max-w-[900px] mx-auto w-full flex gap-2 items-center">
+            <form onSubmit={handleSendMessage} className="mx-auto flex w-full max-w-[900px] items-end gap-1.5 px-2.5 py-2 sm:gap-2 sm:p-3">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -578,7 +647,8 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
                 disabled={sending}
                 variant="ghost"
                 size="icon"
-                className="text-[#667781] hover:bg-[#d1d7db]/30"
+                className="size-11 text-muted-foreground hover:bg-[var(--chat-icon-hover)] md:size-10"
+                aria-label="Upload file"
                 title="Upload file"
               >
                 <Paperclip className="h-5 w-5" />
@@ -589,7 +659,8 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
                 disabled={sending}
                 size="icon"
                 variant="ghost"
-                className="text-[#667781] hover:text-[#00a884] hover:bg-[#f0f2f5]"
+                className="size-11 text-muted-foreground hover:bg-[var(--chat-hover)] hover:text-primary md:size-10"
+                aria-label="Send interactive message"
                 title="Send interactive message"
               >
                 <ListTree className="h-5 w-5" />
@@ -600,30 +671,32 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
                 onChange={(e) => setMessageInput(e.target.value)}
                 placeholder="Type a message"
                 disabled={sending}
-                className="flex-1 bg-white border-[#d1d7db] focus-visible:ring-[#00a884] rounded-lg"
+                aria-label="Message"
+                className="h-11 min-w-0 flex-1 rounded-lg border-[var(--chat-border-strong)] bg-[var(--chat-input)] text-base focus-visible:ring-primary md:h-10 md:text-sm"
               />
               <Button
                 type="submit"
                 disabled={sending || (!messageInput.trim() && !selectedFile)}
                 size="icon"
-                className="bg-[#00a884] hover:bg-[#008f6f] rounded-full"
+                className="size-11 rounded-full bg-primary hover:bg-[var(--primary-hover)] md:size-10"
+                aria-label="Send message"
               >
                 <Send className="h-5 w-5" />
               </Button>
             </form>
           </>
         ) : (
-          <div className="p-3 max-w-[900px] mx-auto w-full">
-            <div className="bg-[#fff4cc] border border-[#e9c46a] rounded-lg p-4">
+          <div className="mx-auto w-full max-w-[900px] p-3">
+            <div className="bg-[var(--chat-warning-background)] border border-[var(--chat-warning-border)] rounded-lg p-4">
               <div className="flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 text-[#8b7000] flex-shrink-0 mt-0.5" />
+                <AlertCircle className="h-5 w-5 text-[var(--chat-warning-foreground)] flex-shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-[#111b21] mb-3">
+                  <p className="text-sm text-foreground mb-3">
                     {getDisabledInputMessage(messages)}
                   </p>
                   <Button
                     onClick={() => setShowTemplateDialog(true)}
-                    className="bg-[#00a884] hover:bg-[#008f6f]"
+                    className="h-11 bg-primary hover:bg-[var(--primary-hover)] md:h-9"
                     size="sm"
                   >
                     <MessageSquare className="h-4 w-4 mr-2" />
@@ -635,7 +708,6 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
           </div>
         )}
       </div>
-
       <TemplateSelectorDialog
         open={showTemplateDialog}
         onOpenChange={setShowTemplateDialog}

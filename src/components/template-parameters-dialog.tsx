@@ -110,13 +110,14 @@ export function TemplateParametersDialog({
               variant="ghost"
               size="icon"
               onClick={onBack}
-              className="h-8 w-8"
+              className="size-10 flex-shrink-0"
+              aria-label="Back to templates"
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <div>
+            <div className="min-w-0">
               <DialogTitle>Template parameters</DialogTitle>
-              <DialogDescription>
+              <DialogDescription className="break-words">
                 Fill in the parameters for {template.name}
               </DialogDescription>
             </div>
@@ -129,17 +130,17 @@ export function TemplateParametersDialog({
           </div>
         )}
 
-        <ScrollArea className="max-h-[400px] pr-4">
+        <ScrollArea className="max-h-[min(56dvh,400px)] pr-3 sm:pr-4">
           <div className="space-y-4">
             {parameterInfo.parameters.map((param) => (
               <div key={param.name} className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <Label htmlFor={param.name} className="text-[#111b21]">
+                  <Label htmlFor={param.name} className="text-foreground">
                     {formatParameterName(param.name)}
                   </Label>
                   <Badge
                     variant="secondary"
-                    className="text-xs bg-[#f0f2f5] text-[#667781]"
+                    className="text-xs bg-[var(--chat-hover)] text-muted-foreground"
                   >
                     {param.component}
                   </Badge>
@@ -149,10 +150,10 @@ export function TemplateParametersDialog({
                   value={parameterValues[param.name] || ''}
                   onChange={(e) => handleParameterChange(param.name, e.target.value)}
                   placeholder={param.example || `Enter ${formatParameterName(param.name)}`}
-                  className="bg-white border-[#d1d7db] focus-visible:ring-[#00a884]"
+                  className="h-11 border-[var(--chat-border-strong)] bg-[var(--chat-input)] text-base focus-visible:ring-primary md:h-10 md:text-sm"
                 />
                 {param.example && (
-                  <p className="text-xs text-[#667781]">
+                  <p className="text-xs text-muted-foreground">
                     Example: {param.example}
                   </p>
                 )}
@@ -163,14 +164,14 @@ export function TemplateParametersDialog({
 
         <Separator />
 
-        <div className="flex justify-between gap-2">
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
           <Button variant="outline" onClick={onBack}>
             Back
           </Button>
           <Button
             onClick={handleSend}
             disabled={!allParametersFilled || sending}
-            className="bg-[#00a884] hover:bg-[#008f6f]"
+            className="bg-primary hover:bg-[var(--primary-hover)]"
           >
             {sending ? (
               <Loader2 className="h-4 w-4 animate-spin" />

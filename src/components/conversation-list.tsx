@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 type Conversation = {
   id: string;
@@ -135,17 +136,20 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
   if (loading) {
     return (
       <div className={cn(
-        "w-full md:w-96 md:border-r border-[#d1d7db] bg-white flex flex-col",
+        "flex min-h-0 w-full min-w-0 flex-col border-[var(--chat-border-strong)] bg-[var(--chat-surface)] md:w-[22rem] md:flex-none md:border-r lg:w-[24rem] xl:w-[26rem]",
         isHidden && "hidden md:flex"
       )}>
-        <div className="p-4 border-b border-[#d1d7db] bg-[#f0f2f5] safe-area-top">
-          <div className="flex items-center justify-between mb-3">
+        <div className="border-b border-[var(--chat-border-strong)] bg-[var(--chat-toolbar)] p-3 safe-area-top sm:p-4">
+          <div className="mb-3 flex items-center justify-between pt-1">
             <Skeleton className="h-7 w-20" />
-            <Skeleton className="h-9 w-24" />
+            <div className="flex items-center gap-2">
+              <ThemeToggle className="size-11 md:size-10" />
+              <Skeleton className="size-10" />
+            </div>
           </div>
-          <Skeleton className="h-10 w-full rounded-lg" />
+          <Skeleton className="h-11 w-full rounded-lg md:h-10" />
         </div>
-        <div className="flex-1 p-3 space-y-3">
+        <div className="flex-1 space-y-3 overflow-hidden p-3">
           {[1, 2, 3, 4, 5, 6, 7].map((i) => (
             <div key={i} className="flex gap-3 p-3">
               <Skeleton className="h-12 w-12 rounded-full flex-shrink-0" />
@@ -162,86 +166,93 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
 
   return (
     <div className={cn(
-      "w-full md:w-96 md:border-r border-[#d1d7db] bg-white flex flex-col",
+      "flex min-h-0 w-full min-w-0 flex-col border-[var(--chat-border-strong)] bg-[var(--chat-surface)] md:w-[22rem] md:flex-none md:border-r lg:w-[24rem] xl:w-[26rem]",
       isHidden && "hidden md:flex"
     )}>
-      <div className="p-4 border-b border-[#d1d7db] bg-[#f0f2f5] safe-area-top">
-        <div className="flex items-center justify-between mb-3">
+      <div className="border-b border-[var(--chat-border-strong)] bg-[var(--chat-toolbar)] p-3 safe-area-top sm:p-4">
+        <div className="mb-3 flex items-center justify-between pt-1">
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold text-[#111b21]">Chats</h1>
+            <h1 className="text-lg font-semibold text-foreground sm:text-xl">Chats</h1>
             {isPolling && (
               <div
-                className="h-2 w-2 rounded-full bg-green-500 animate-pulse"
+                className="h-2 w-2 rounded-full bg-[var(--chat-presence)] animate-pulse"
                 title="Auto-updating"
+                role="status"
+                aria-label="Auto-updating conversations"
               />
             )}
           </div>
-          <Button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            variant="ghost"
-            size="icon"
-            className="text-[#667781] hover:bg-[#d1d7db]/30"
-          >
-            <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
-          </Button>
+          <div className="flex items-center gap-2">
+            <ThemeToggle className="size-11 md:size-10" />
+            <Button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              variant="ghost"
+              size="icon"
+              className="size-11 text-muted-foreground hover:bg-[var(--chat-icon-hover)] md:size-10"
+              aria-label="Refresh conversations"
+              title="Refresh conversations"
+            >
+              <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
+            </Button>
+          </div>
         </div>
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#667781]" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search or start new chat"
-            className="pl-9 bg-white border-[#d1d7db] focus-visible:ring-[#00a884] rounded-lg"
+            aria-label="Search conversations"
+            className="h-11 rounded-lg border-[var(--chat-border-strong)] bg-[var(--chat-input)] pl-9 text-base focus-visible:ring-primary md:h-10 md:text-sm"
           />
         </div>
       </div>
 
-      <ScrollArea className="flex-1 h-0 overflow-hidden">
+      <ScrollArea className="h-0 flex-1 overflow-hidden overscroll-contain">
         {filteredConversations.length === 0 ? (
-          <div className="p-4 text-center text-[#667781]">
+          <div className="p-4 text-center text-muted-foreground">
             {searchQuery ? 'No conversations found' : 'No conversations yet'}
           </div>
         ) : (
           <div className="w-full overflow-hidden">
-          {filteredConversations.map((conversation) => (
-            <button
-              key={conversation.id}
-              onClick={() => onSelectConversation(conversation)}
-              className={cn(
-                'w-full p-3 pr-4 border-b border-[#e9edef] hover:bg-[#f0f2f5] text-left transition-colors relative overflow-hidden',
-                selectedConversationId === conversation.id && 'bg-[#f0f2f5]'
-              )}
-            >
-              <div className="flex gap-3 items-start overflow-hidden">
-                <Avatar className="h-12 w-12 flex-shrink-0">
-                  <AvatarFallback className="bg-[#d1d7db] text-[#111b21] text-sm font-medium">
-                    {getAvatarInitials(conversation.contactName, conversation.phoneNumber)}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0 flex justify-between items-start gap-4 overflow-hidden">
-                  <div className="flex-1 min-w-0 overflow-hidden">
-                    <p className="font-medium text-[#111b21] truncate">
-                      {conversation.contactName || conversation.phoneNumber}
-                    </p>
-                    {conversation.lastMessage && (
-                      <p className="text-sm text-[#667781] truncate mt-0.5">
-                        {conversation.lastMessage.direction === 'outbound' && (
-                          <span className="text-[#53bdeb]">✓ </span>
-                        )}
-                        {conversation.lastMessage.content}
+            {filteredConversations.map((conversation) => (
+              <button
+                key={conversation.id}
+                onClick={() => onSelectConversation(conversation)}
+                className={cn(
+                  'relative min-h-[72px] w-full touch-manipulation overflow-hidden border-b border-[var(--chat-border)] p-3 text-left transition-[background-color,transform] hover:bg-[var(--chat-hover)] active:scale-[0.995] sm:pr-4',
+                  selectedConversationId === conversation.id && 'bg-[var(--chat-hover)]'
+                )}
+              >
+                <div className="flex gap-3 items-start overflow-hidden">
+                  <Avatar className="h-11 w-11 flex-shrink-0 sm:h-12 sm:w-12">
+                    <AvatarFallback className="bg-[var(--chat-avatar)] text-foreground text-sm font-medium">
+                      {getAvatarInitials(conversation.contactName, conversation.phoneNumber)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0 flex justify-between items-start gap-2 overflow-hidden sm:gap-4">
+                    <div className="flex-1 min-w-0 overflow-hidden">
+                      <p className="font-medium text-foreground truncate">
+                        {conversation.contactName || conversation.phoneNumber}
                       </p>
-                    )}
+                      {conversation.lastMessage && (
+                        <p className="text-sm text-muted-foreground truncate mt-0.5">
+                          {conversation.lastMessage.direction === 'outbound' && (
+                            <span className="text-[var(--chat-check)]">✓ </span>
+                          )}
+                          {conversation.lastMessage.content}
+                        </p>
+                      )}
+                    </div>
+                    <span className="ml-2 mt-0.5 flex-shrink-0 text-xs tabular-nums text-muted-foreground sm:ml-4">
+                      {formatConversationDate(conversation.lastActiveAt)}
+                    </span>
                   </div>
-                  <span className="text-xs text-[#667781] flex-shrink-0 mt-0.5 ml-4">
-                    {formatConversationDate(conversation.lastActiveAt)}
-                  </span>
                 </div>
-              </div>
-            </button>
-          ))
-          }
+              </button>
+            ))}
           </div>
         )}
       </ScrollArea>
