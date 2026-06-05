@@ -8,6 +8,7 @@ type Conversation = {
   id: string;
   phoneNumber: string;
   contactName?: string;
+  lastActiveAt?: string;
 };
 
 export default function Home() {
@@ -32,7 +33,7 @@ export default function Home() {
   };
 
   return (
-    <div className="h-dvh flex">
+    <div className="flex h-dvh min-h-dvh w-full overflow-hidden bg-background text-foreground">
       <ConversationList
         ref={conversationListRef}
         onSelectConversation={setSelectedConversation}
@@ -43,6 +44,7 @@ export default function Home() {
         conversationId={selectedConversation?.id}
         phoneNumber={selectedConversation?.phoneNumber}
         contactName={selectedConversation?.contactName}
+        lastActiveAt={selectedConversation?.lastActiveAt}
         onTemplateSent={handleTemplateSent}
         onBack={handleBackToList}
         isVisible={!!selectedConversation}

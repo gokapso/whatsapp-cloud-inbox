@@ -146,9 +146,9 @@ export function InteractiveMessageDialog({
           </div>
         )}
 
-        <div className="space-y-4">
+        <div className="max-h-[min(64dvh,520px)] space-y-4 overflow-y-auto pr-1">
           <div className="space-y-2">
-            <Label htmlFor="header" className="text-[#111b21]">
+            <Label htmlFor="header" className="text-foreground">
               Header (optional)
             </Label>
             <Input
@@ -156,12 +156,12 @@ export function InteractiveMessageDialog({
               value={header}
               onChange={(e) => setHeader(e.target.value)}
               placeholder="Add a header to your message"
-              className="bg-white border-[#d1d7db] focus-visible:ring-[#00a884]"
+              className="h-11 border-[var(--chat-border-strong)] bg-[var(--chat-input)] text-base focus-visible:ring-primary md:h-10 md:text-sm"
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="body" className="text-[#111b21]">
+            <Label htmlFor="body" className="text-foreground">
               Body <span className="text-red-500">*</span>
             </Label>
             <Textarea
@@ -169,13 +169,13 @@ export function InteractiveMessageDialog({
               value={body}
               onChange={(e) => setBody(e.target.value)}
               placeholder="Enter your message text"
-              className="bg-white border-[#d1d7db] focus-visible:ring-[#00a884] min-h-[100px]"
+              className="min-h-[120px] border-[var(--chat-border-strong)] bg-[var(--chat-input)] text-base focus-visible:ring-primary md:min-h-[100px] md:text-sm"
             />
           </div>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label className="text-[#111b21]">
+              <Label className="text-foreground">
                 Buttons <span className="text-red-500">*</span>
               </Label>
               <Button
@@ -184,7 +184,7 @@ export function InteractiveMessageDialog({
                 size="sm"
                 onClick={handleAddButton}
                 disabled={buttons.length >= 3}
-                className="h-8 text-[#00a884] hover:text-[#008f6f] hover:bg-[#f0f2f5]"
+                className="h-10 text-primary hover:bg-[var(--chat-hover)] hover:text-[var(--primary-hover)]"
               >
                 <Plus className="h-4 w-4 mr-1" />
                 Add button
@@ -198,10 +198,10 @@ export function InteractiveMessageDialog({
                     value={button.title}
                     onChange={(e) => handleButtonTitleChange(index, e.target.value)}
                     placeholder={`Button ${index + 1} title`}
-                    className="bg-white border-[#d1d7db] focus-visible:ring-[#00a884]"
+                    className="h-11 border-[var(--chat-border-strong)] bg-[var(--chat-input)] text-base focus-visible:ring-primary md:h-10 md:text-sm"
                     maxLength={20}
                   />
-                  <span className="text-xs text-[#667781] min-w-[3rem]">
+                  <span className="text-xs text-muted-foreground min-w-[3rem]">
                     {button.title.length}/20
                   </span>
                   {buttons.length > 1 && (
@@ -210,7 +210,8 @@ export function InteractiveMessageDialog({
                       variant="ghost"
                       size="icon"
                       onClick={() => handleRemoveButton(index)}
-                      className="h-9 w-9 text-[#667781] hover:text-red-600 hover:bg-red-50"
+                      className="size-11 text-muted-foreground hover:bg-red-50 hover:text-red-600 md:size-10"
+                      aria-label={`Remove button ${index + 1}`}
                     >
                       <X className="h-4 w-4" />
                     </Button>
@@ -220,7 +221,7 @@ export function InteractiveMessageDialog({
             </div>
 
             {buttons.length < 3 && (
-              <p className="text-xs text-[#667781]">
+              <p className="text-xs text-muted-foreground">
                 You can add up to {3 - buttons.length} more button{3 - buttons.length !== 1 ? 's' : ''}
               </p>
             )}
@@ -229,14 +230,14 @@ export function InteractiveMessageDialog({
 
         <Separator />
 
-        <div className="flex justify-between gap-2">
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button
             onClick={handleSend}
             disabled={!isValid() || sending}
-            className="bg-[#00a884] hover:bg-[#008f6f]"
+            className="bg-primary hover:bg-[var(--primary-hover)]"
           >
             {sending ? (
               <Loader2 className="h-4 w-4 animate-spin" />

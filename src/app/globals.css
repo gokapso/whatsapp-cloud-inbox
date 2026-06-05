@@ -43,76 +43,119 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-:root {
+:root,
+:root[data-theme="default"][data-mode="light"] {
   --radius: 0.5rem;
-  --background: #f0f2f5;
-  --foreground: #111b21;
-  --card: #ffffff;
-  --card-foreground: #111b21;
-  --popover: #ffffff;
-  --popover-foreground: #111b21;
-  --primary: #00a884;
-  --primary-foreground: #ffffff;
-  --secondary: #f0f2f5;
-  --secondary-foreground: #111b21;
-  --muted: #f0f2f5;
-  --muted-foreground: #667781;
-  --accent: #f0f2f5;
-  --accent-foreground: #111b21;
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: #e9edef;
-  --input: #e9edef;
-  --ring: #00a884;
+  --background: hsl(210 20% 98%);
+  --foreground: hsl(240 10% 3.9%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(240 10% 3.9%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(240 10% 3.9%);
+  --primary: hsl(142.1 76.2% 36.3%);
+  --primary-foreground: hsl(355.7 100% 97.3%);
+  --secondary: hsl(240 4.8% 95.9%);
+  --secondary-foreground: hsl(240 5.9% 10%);
+  --muted: hsl(240 4.8% 95.9%);
+  --muted-foreground: hsl(240 3.8% 46.1%);
+  --accent: hsl(240 4.8% 95.9%);
+  --accent-foreground: hsl(240 5.9% 10%);
+  --destructive: hsl(0 84.2% 60.2%);
+  --destructive-foreground: hsl(0 0% 98%);
+  --warning: hsl(38 92% 50%);
+  --warning-foreground: hsl(30 80% 15%);
+  --success: hsl(142 76% 36%);
+  --success-foreground: hsl(0 0% 98%);
+  --border: hsl(220 13% 91%);
+  --input: hsl(240 5.9% 90%);
+  --ring: hsl(142.1 76.2% 36.3%);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: #ffffff;
-  --sidebar-foreground: #111b21;
-  --sidebar-primary: #00a884;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f0f2f5;
-  --sidebar-accent-foreground: #111b21;
-  --sidebar-border: #e9edef;
-  --sidebar-ring: #00a884;
-  --whatsapp-green: #00a884;
-  --whatsapp-bubble-incoming: #ffffff;
-  --whatsapp-bubble-outgoing: #d9fdd3;
+  --sidebar: hsl(0 0% 100%);
+  --sidebar-foreground: hsl(240 10% 3.9%);
+  --sidebar-primary: hsl(142.1 76.2% 36.3%);
+  --sidebar-primary-foreground: hsl(355.7 100% 97.3%);
+  --sidebar-accent: hsl(240 4.8% 95.9%);
+  --sidebar-accent-foreground: hsl(240 5.9% 10%);
+  --sidebar-border: hsl(240 5.9% 90%);
+  --sidebar-ring: hsl(142.1 76.2% 36.3%);
+  --whatsapp-green: hsl(142.1 76.2% 36.3%);
+  --whatsapp-bubble-incoming: hsl(0 0% 100%);
+  --whatsapp-bubble-outgoing: hsl(142 76% 90%);
+  --primary-hover: hsl(142.1 76.2% 31%);
+  --chat-surface: hsl(0 0% 100%);
+  --chat-toolbar: hsl(210 20% 98%);
+  --chat-canvas: hsl(210 20% 98%);
+  --chat-border: hsl(220 13% 91%);
+  --chat-border-strong: hsl(240 5.9% 90%);
+  --chat-hover: hsl(240 4.8% 95.9%);
+  --chat-icon-hover: hsl(240 5.9% 90% / 55%);
+  --chat-input: hsl(0 0% 100%);
+  --chat-bubble-incoming: hsl(0 0% 100%);
+  --chat-bubble-outgoing: hsl(142 76% 90%);
+  --chat-avatar: hsl(220 13% 91%);
+  --chat-check: hsl(142.1 76.2% 36.3%);
+  --chat-presence: hsl(142.1 76.2% 36.3%);
+  --chat-warning-background: hsl(38 92% 50% / 14%);
+  --chat-warning-border: hsl(38 92% 50% / 35%);
+  --chat-warning-foreground: hsl(30 80% 25%);
+  --chat-media-outline: rgb(0 0 0 / 10%);
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+:root[data-theme="default"][data-mode="dark"],
+:root[data-theme="kapso"] {
+  --background: hsl(20 14.3% 4.1%);
+  --foreground: hsl(0 0% 95%);
+  --card: hsl(24 9.8% 10%);
+  --card-foreground: hsl(0 0% 95%);
+  --popover: hsl(0 0% 9%);
+  --popover-foreground: hsl(0 0% 95%);
+  --primary: hsl(142.1 70.6% 45.3%);
+  --primary-foreground: hsl(144.9 80.4% 10%);
+  --secondary: hsl(240 3.7% 15.9%);
+  --secondary-foreground: hsl(0 0% 98%);
+  --muted: hsl(0 0% 15%);
+  --muted-foreground: hsl(240 5% 64.9%);
+  --accent: hsl(12 6.5% 15.1%);
+  --accent-foreground: hsl(0 0% 98%);
+  --destructive: hsl(0 62.8% 30.6%);
+  --destructive-foreground: hsl(0 85.7% 97.3%);
+  --warning: hsl(38 92% 55%);
+  --warning-foreground: hsl(30 80% 12%);
+  --success: hsl(142 69% 29%);
+  --success-foreground: hsl(0 0% 98%);
+  --border: hsl(240 3.7% 15.9%);
+  --input: hsl(240 3.7% 15.9%);
+  --ring: hsl(142.4 71.8% 29.2%);
+  --sidebar: hsl(24 9.8% 10%);
+  --sidebar-foreground: hsl(0 0% 95%);
+  --sidebar-primary: hsl(142.1 70.6% 45.3%);
+  --sidebar-primary-foreground: hsl(144.9 80.4% 10%);
+  --sidebar-accent: hsl(240 3.7% 15.9%);
+  --sidebar-accent-foreground: hsl(0 0% 98%);
+  --sidebar-border: hsl(240 3.7% 15.9%);
+  --sidebar-ring: hsl(142.4 71.8% 29.2%);
+  --primary-hover: hsl(142.1 70.6% 39%);
+  --chat-surface: hsl(24 9.8% 10%);
+  --chat-toolbar: hsl(24 9.8% 10%);
+  --chat-canvas: hsl(20 14.3% 4.1%);
+  --chat-border: hsl(240 3.7% 15.9%);
+  --chat-border-strong: hsl(240 3.7% 20%);
+  --chat-hover: hsl(12 6.5% 15.1%);
+  --chat-icon-hover: hsl(240 3.7% 15.9% / 80%);
+  --chat-input: hsl(0 0% 9%);
+  --chat-bubble-incoming: #1c1917;
+  --chat-bubble-outgoing: #242424;
+  --chat-avatar: hsl(240 3.7% 15.9%);
+  --chat-check: #53bdeb;
+  --chat-presence: hsl(142.1 70.6% 45.3%);
+  --chat-warning-background: hsl(38 92% 55% / 14%);
+  --chat-warning-border: hsl(38 92% 55% / 35%);
+  --chat-warning-foreground: hsl(38 92% 75%);
+  --chat-media-outline: hsl(0 0% 100% / 10%);
 }
 
 @layer base {
@@ -121,6 +164,41 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+
+  html,
+  body {
+    min-width: 320px;
+    overflow: hidden;
+    transition: background-color 160ms ease, color 160ms ease;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    touch-action: manipulation;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

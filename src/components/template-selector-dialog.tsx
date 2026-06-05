@@ -155,30 +155,30 @@ export function TemplateSelectorDialog({ open, onOpenChange, phoneNumber, onTemp
 
         {loading ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin text-[#00a884]" />
+            <Loader2 className="size-8 animate-spin text-primary" />
           </div>
         ) : templates.length === 0 ? (
           <div className="py-8 text-center text-muted-foreground">
             No approved templates found
           </div>
         ) : (
-          <ScrollArea className="h-[400px] pr-4">
+          <ScrollArea className="max-h-[min(56dvh,400px)] pr-3 sm:pr-4">
             <div className="space-y-3">
               {templates.map((template) => (
                 <div
                   key={template.id}
-                  className="p-4 border border-[#d1d7db] rounded-lg hover:bg-[#f0f2f5] transition-colors"
+                  className="rounded-lg border border-[var(--chat-border-strong)] p-3 transition-colors hover:bg-[var(--chat-hover)] sm:p-4"
                 >
-                  <div className="flex items-start justify-between gap-3 mb-2">
+                  <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-[#111b21] truncate">
+                      <h3 className="font-medium text-foreground truncate">
                         {template.name}
                       </h3>
-                      <div className="flex items-center gap-2 mt-1">
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
                         <Badge variant="secondary" className={getCategoryColor(template.category)}>
                           {template.category}
                         </Badge>
-                        <span className="text-xs text-[#667781]">
+                        <span className="text-xs text-muted-foreground">
                           {template.language}
                         </span>
                       </div>
@@ -187,7 +187,7 @@ export function TemplateSelectorDialog({ open, onOpenChange, phoneNumber, onTemp
                       onClick={() => handleSelectTemplate(template)}
                       disabled={sending !== null}
                       size="sm"
-                      className="bg-[#00a884] hover:bg-[#008f6f]"
+                      className="h-10 w-full bg-primary hover:bg-[var(--primary-hover)] sm:w-auto"
                     >
                       {sending === template.id ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
