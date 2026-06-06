@@ -1,0 +1,202 @@
+import type { MediaData } from '@kapso/whatsapp-cloud-api';
+
+export type ConversationStatusFilter = 'all' | 'active' | 'ended';
+
+export type Conversation = {
+  id: string;
+  phoneNumber: string;
+  status: string;
+  lastActiveAt?: string;
+  phoneNumberId: string;
+  metadata?: Record<string, unknown>;
+  contactName?: string;
+  messagesCount?: number;
+  lastMessage?: {
+    content: string;
+    direction: string;
+    type?: string;
+  };
+};
+
+export type Message = {
+  id: string;
+  conversationId: string;
+  direction: 'inbound' | 'outbound';
+  content: string;
+  createdAt: string;
+  status?: string;
+  phoneNumber: string;
+  hasMedia: boolean;
+  mediaData?: {
+    url: string;
+    contentType?: string;
+    filename?: string;
+  } | (MediaData & { url: string });
+  reactionEmoji?: string | null;
+  reactedToMessageId?: string | null;
+  filename?: string | null;
+  mimeType?: string | null;
+  messageType?: string;
+  caption?: string | null;
+  metadata?: {
+    mediaId?: string;
+    caption?: string;
+  };
+};
+
+export type ConversationThread = {
+  key: string;
+  phoneNumber: string;
+  contactName?: string;
+  conversations: Conversation[];
+  latestConversation: Conversation;
+  conversationCount: number;
+  previousConversationIds: string[];
+  status: string;
+  lastActiveAt?: string;
+  lastMessage?: Conversation['lastMessage'];
+};
+
+export const CONVERSATIONS_QUERY_KEY = ['conversations'] as const;
+
+export function conversationMessagesQueryKey(conversationId: string) {
+  return ['conversation-messages', conversationId] as const;
+}
+
+export function phoneThreadMessagesQueryKey(phoneNumber: string | undefined, conversationIds: string[]) {
+  return ['phone-thread-messages', phoneNumber ?? '', conversationIds.join(':')] as const;
+}
+
+function parseTimestamp(timestamp?: string): number {
+  if (!timestamp) return 0;
+  const time = Date.parse(timestamp);
+  return Number.isFinite(time) ? time : 0;
+}
+
+function conversationGroupKey(conversation: Conversation): string {
+  const phoneNumber = conversation.phoneNumber.trim();
+  const comparablePhoneNumber = phoneNumber.replace(/\D/g, '');
+  return comparablePhoneNumber || phoneNumber || `conversation:${conversation.id}`;
+}
+
+function byMostRecentConversation(a: Conversation, b: Conversation): number {
+  const delta = parseTimestamp(b.lastActiveAt) - parseTimestamp(a.lastActiveAt);
+  if (delta !== 0) return delta;
+  return b.id.localeCompare(a.id);
+}
+
+export async function fetchConversations(): Promise<Conversation[]> {
+  const response = await fetch('/api/conversations?limit=100');
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Failed to fetch conversations');
+  }
+
+  return data.data || [];
+}
+
+export async function fetchConversationMessages(conversationId: string): Promise<Message[]> {
+  const response = await fetch(`/api/messages/${conversationId}?limit=100`);
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Failed to fetch messages');
+  }
+
+  const messages = (data.data || []).map((message: Omit<Message, 'conversationId'>) => ({
+    ...message,
+    conversationId,
+  }));
+
+  return normalizeMessages(messages);
+}
+
+export function groupConversationsByPhoneNumber(conversations: Conversation[]): ConversationThread[] {
+  const groupedConversations = new Map<string, Conversation[]>();
+
+  conversations.forEach((conversation) => {
+    const key = conversationGroupKey(conversation);
+    const existing = groupedConversations.get(key) || [];
+    existing.push(conversation);
+    groupedConversations.set(key, existing);
+  });
+
+  return Array.from(groupedConversations.entries())
+    .map(([key, threadConversations]) => {
+      const sortedConversations = [...threadConversations].sort(byMostRecentConversation);
+      const latestConversation = sortedConversations[0];
+
+      return {
+        key,
+        phoneNumber: latestConversation.phoneNumber,
+        contactName: latestConversation.contactName || sortedConversations.find(conversation => conversation.contactName)?.contactName,
+        conversations: sortedConversations,
+        latestConversation,
+        conversationCount: sortedConversations.length,
+        previousConversationIds: sortedConversations.slice(1).map(conversation => conversation.id),
+        status: latestConversation.status,
+        lastActiveAt: latestConversation.lastActiveAt,
+        lastMessage: latestConversation.lastMessage,
+      };
+    })
+    .sort((a, b) => byMostRecentConversation(a.latestConversation, b.latestConversation));
+}
+
+export function filterConversationThreads(
+  threads: ConversationThread[],
+  statusFilter: ConversationStatusFilter,
+  searchQuery: string,
+): ConversationThread[] {
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+
+  return threads.filter((thread) => {
+    if (statusFilter !== 'all' && thread.latestConversation.status !== statusFilter) {
+      return false;
+    }
+
+    if (!normalizedQuery) return true;
+
+    return (
+      thread.phoneNumber.toLowerCase().includes(normalizedQuery) ||
+      thread.contactName?.toLowerCase().includes(normalizedQuery) ||
+      thread.conversations.some(conversation => conversation.id.toLowerCase().includes(normalizedQuery))
+    );
+  });
+}
+
+export function countThreadsByStatus(threads: ConversationThread[]) {
+  return threads.reduce(
+    (counts, thread) => {
+      counts.all += 1;
+      if (thread.latestConversation.status === 'active') counts.active += 1;
+      if (thread.latestConversation.status === 'ended') counts.ended += 1;
+      return counts;
+    },
+    { all: 0, active: 0, ended: 0 },
+  );
+}
+
+export function shortConversationId(conversationId?: string): string {
+  if (!conversationId) return '';
+  return conversationId.replace(/-/g, '').slice(0, 8);
+}
+
+export function normalizeMessages(messages: Message[]): Message[] {
+  const reactions = messages.filter(message => message.messageType === 'reaction');
+  const regularMessages = messages.filter(message => message.messageType !== 'reaction');
+  const reactionMap = new Map<string, string>();
+
+  reactions.forEach((reaction) => {
+    if (reaction.reactedToMessageId && reaction.reactionEmoji) {
+      reactionMap.set(reaction.reactedToMessageId, reaction.reactionEmoji);
+    }
+  });
+
+  return regularMessages
+    .map((message) => {
+      const reaction = reactionMap.get(message.id);
+      return reaction ? { ...message, reactionEmoji: reaction } : message;
+    })
+    .sort((a, b) => parseTimestamp(a.createdAt) - parseTimestamp(b.createdAt));
+}

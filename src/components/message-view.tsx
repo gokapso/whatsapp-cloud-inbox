@@ -1,68 +1,70 @@
-'use client';
+"use client";
 
-import { useEffect, useState, useRef, useCallback } from 'react';
-import { format, formatDistanceToNow, isValid, isToday, isYesterday, differenceInHours } from 'date-fns';
-import { RefreshCw, Paperclip, Send, X, AlertCircle, MessageSquare, XCircle, ListTree, ArrowLeft, Check } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { MediaMessage } from '@/components/media-message';
-import { TemplateSelectorDialog } from '@/components/template-selector-dialog';
-import { InteractiveMessageDialog } from '@/components/interactive-message-dialog';
-import { useAutoPolling } from '@/hooks/use-auto-polling';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
-import { ThemeToggle } from '@/components/theme-toggle';
-import type { MediaData } from '@kapso/whatsapp-cloud-api';
-
-type Message = {
-  id: string;
-  direction: 'inbound' | 'outbound';
-  content: string;
-  createdAt: string;
-  status?: string;
-  phoneNumber: string;
-  hasMedia: boolean;
-  mediaData?: {
-    url: string;
-    contentType?: string;
-    filename?: string;
-  } | (MediaData & { url: string });
-  reactionEmoji?: string | null;
-  reactedToMessageId?: string | null;
-  filename?: string | null;
-  mimeType?: string | null;
-  messageType?: string;
-  caption?: string | null;
-  metadata?: {
-    mediaId?: string;
-    caption?: string;
-  };
-};
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  format,
+  formatDistanceToNow,
+  isValid,
+  isToday,
+  isYesterday,
+  differenceInHours,
+} from "date-fns";
+import {
+  RefreshCw,
+  Paperclip,
+  Send,
+  X,
+  AlertCircle,
+  MessageSquare,
+  XCircle,
+  ListTree,
+  ArrowLeft,
+  Check,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  CONVERSATIONS_QUERY_KEY,
+  type Conversation,
+  type Message,
+  conversationMessagesQueryKey,
+  fetchConversationMessages,
+  normalizeMessages,
+  phoneThreadMessagesQueryKey,
+  shortConversationId,
+} from "@/lib/inbox-data";
+import { MediaMessage } from "@/components/media-message";
+import { TemplateSelectorDialog } from "@/components/template-selector-dialog";
+import { InteractiveMessageDialog } from "@/components/interactive-message-dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 function formatMessageTime(timestamp: string): string {
   try {
     const date = new Date(timestamp);
     if (isValid(date)) {
-      return format(date, 'HH:mm');
+      return format(date, "HH:mm");
     }
-    return '';
+    return "";
   } catch {
-    return '';
+    return "";
   }
 }
 
 function formatDateDivider(timestamp: string): string {
   try {
     const date = new Date(timestamp);
-    if (!isValid(date)) return '';
+    if (!isValid(date)) return "";
 
-    if (isToday(date)) return 'Today';
-    if (isYesterday(date)) return 'Yesterday';
-    return format(date, 'MMMM d, yyyy');
+    if (isToday(date)) return "Today";
+    if (isYesterday(date)) return "Yesterday";
+    return format(date, "MMMM d, yyyy");
   } catch {
-    return '';
+    return "";
   }
 }
 
@@ -84,17 +86,17 @@ function formatDisplayPhoneNumber(phoneNumber?: string): string | null {
 
   const trimmedPhoneNumber = phoneNumber.trim();
   if (!trimmedPhoneNumber) return null;
-  if (trimmedPhoneNumber.startsWith('+')) return trimmedPhoneNumber;
+  if (trimmedPhoneNumber.startsWith("+")) return trimmedPhoneNumber;
   if (/^\d+$/.test(trimmedPhoneNumber)) return `+${trimmedPhoneNumber}`;
 
   return trimmedPhoneNumber;
 }
 
 function MessageStatusChecks({ status }: { status: string }) {
-  if (status === 'read' || status === 'delivered') {
+  if (status === "read" || status === "delivered") {
     return (
       <span
-        aria-label={status === 'read' ? 'Read' : 'Delivered'}
+        aria-label={status === "read" ? "Read" : "Delivered"}
         className="relative inline-flex h-3.5 w-[1.125rem] items-center text-[var(--chat-check)]"
       >
         <Check aria-hidden="true" className="absolute left-0 top-0 size-3.5" />
@@ -103,14 +105,19 @@ function MessageStatusChecks({ status }: { status: string }) {
     );
   }
 
-  if (status === 'sent') {
-    return <Check aria-label="Sent" className="size-3.5 text-[var(--chat-check)]" />;
+  if (status === "sent") {
+    return (
+      <Check aria-label="Sent" className="size-3.5 text-[var(--chat-check)]" />
+    );
   }
 
   return null;
 }
 
-function shouldShowDateDivider(currentMsg: Message, prevMsg: Message | null): boolean {
+function shouldShowDateDivider(
+  currentMsg: Message,
+  prevMsg: Message | null,
+): boolean {
   if (!prevMsg) return true;
 
   try {
@@ -119,15 +126,24 @@ function shouldShowDateDivider(currentMsg: Message, prevMsg: Message | null): bo
 
     if (!isValid(currentDate) || !isValid(prevDate)) return false;
 
-    return format(currentDate, 'yyyy-MM-dd') !== format(prevDate, 'yyyy-MM-dd');
+    return format(currentDate, "yyyy-MM-dd") !== format(prevDate, "yyyy-MM-dd");
   } catch {
     return false;
   }
 }
 
+function shouldShowConversationDivider(
+  currentMsg: Message,
+  prevMsg: Message | null,
+): boolean {
+  return Boolean(
+    prevMsg && currentMsg.conversationId !== prevMsg.conversationId,
+  );
+}
+
 function isWithin24HourWindow(messages: Message[]): boolean {
   // Find the last inbound message
-  const inboundMessages = messages.filter(msg => msg.direction === 'inbound');
+  const inboundMessages = messages.filter((msg) => msg.direction === "inbound");
 
   if (inboundMessages.length === 0) {
     // No inbound messages yet - only templates allowed
@@ -140,7 +156,10 @@ function isWithin24HourWindow(messages: Message[]): boolean {
     const lastMessageDate = new Date(lastInboundMessage.createdAt);
     if (!isValid(lastMessageDate)) return false;
 
-    const hoursSinceLastMessage = differenceInHours(new Date(), lastMessageDate);
+    const hoursSinceLastMessage = differenceInHours(
+      new Date(),
+      lastMessageDate,
+    );
     return hoursSinceLastMessage < 24;
   } catch {
     return false; // In case of error, only allow templates
@@ -148,7 +167,7 @@ function isWithin24HourWindow(messages: Message[]): boolean {
 }
 
 function getDisabledInputMessage(messages: Message[]): string {
-  const inboundMessages = messages.filter(msg => msg.direction === 'inbound');
+  const inboundMessages = messages.filter((msg) => msg.direction === "inbound");
 
   if (inboundMessages.length === 0) {
     return "User hasn't messaged yet. Send a template message or wait for them to reply.";
@@ -161,6 +180,7 @@ const MESSAGE_SKELETON_WIDTHS = [280, 180, 320, 210, 260, 170];
 
 type Props = {
   conversationId?: string;
+  conversations?: Conversation[];
   phoneNumber?: string;
   contactName?: string;
   lastActiveAt?: string;
@@ -169,11 +189,18 @@ type Props = {
   isVisible?: boolean;
 };
 
-export function MessageView({ conversationId, phoneNumber, contactName, lastActiveAt, onTemplateSent, onBack, isVisible = false }: Props) {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(false);
+export function MessageView({
+  conversationId,
+  conversations = [],
+  phoneNumber,
+  contactName,
+  lastActiveAt,
+  onTemplateSent,
+  onBack,
+  isVisible = false,
+}: Props) {
   const [refreshing, setRefreshing] = useState(false);
-  const [messageInput, setMessageInput] = useState('');
+  const [messageInput, setMessageInput] = useState("");
   const [sending, setSending] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
@@ -184,66 +211,187 @@ export function MessageView({ conversationId, phoneNumber, contactName, lastActi
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const previousMessageCountRef = useRef(0);
+  const lastInitialScrollKeyRef = useRef("");
+  const queryClient = useQueryClient();
   const lastSeenText = formatLastSeen(lastActiveAt);
   const displayPhoneNumber = formatDisplayPhoneNumber(phoneNumber);
+  const threadConversationIds = useMemo(() => {
+    const conversationIds = conversations.map(
+      (conversation) => conversation.id,
+    );
+    return conversationIds.length > 0
+      ? conversationIds
+      : conversationId
+        ? [conversationId]
+        : [];
+  }, [conversationId, conversations]);
+  const threadMessagesQueryKey = useMemo(
+    () => phoneThreadMessagesQueryKey(phoneNumber, threadConversationIds),
+    [phoneNumber, threadConversationIds],
+  );
+  const threadKey = threadConversationIds.join(":");
+  const initialScrollKey = `${conversationId ?? ""}:${threadKey}`;
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const getScrollViewport = useCallback(() => {
+    return (
+      messagesContainerRef.current?.querySelector<HTMLElement>(
+        "[data-radix-scroll-area-viewport]",
+      ) ?? null
+    );
+  }, []);
 
-  const fetchMessages = useCallback(async () => {
-    if (!conversationId) return;
+  const scrollToBottom = useCallback(() => {
+    const viewport = getScrollViewport();
 
-    try {
-      const response = await fetch(`/api/messages/${conversationId}`);
-      const data = await response.json();
+    if (viewport) {
+      viewport.scrollTop = viewport.scrollHeight;
+    }
 
-      // Separate reactions from regular messages
-      const reactions = (data.data || []).filter((msg: Message) => msg.messageType === 'reaction');
-      const regularMessages = (data.data || []).filter((msg: Message) => msg.messageType !== 'reaction');
+    messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+  }, [getScrollViewport]);
 
-      // Create a map of message ID to reaction emoji
-      const reactionMap = new Map<string, string>();
-      reactions.forEach((reaction: Message) => {
-        if (reaction.reactedToMessageId && reaction.reactionEmoji) {
-          reactionMap.set(reaction.reactedToMessageId, reaction.reactionEmoji);
+  const scrollToSelectedConversation = useCallback(() => {
+    const viewport = getScrollViewport();
+
+    if (!viewport || !conversationId) {
+      scrollToBottom();
+      return;
+    }
+
+    const selectedConversationMessages = Array.from(
+      viewport.querySelectorAll<HTMLElement>("[data-conversation-id]"),
+    ).filter((element) => element.dataset.conversationId === conversationId);
+    const targetMessage =
+      selectedConversationMessages[selectedConversationMessages.length - 1];
+
+    if (targetMessage) {
+      targetMessage.scrollIntoView({ behavior: "auto", block: "center" });
+      return;
+    }
+
+    scrollToBottom();
+  }, [conversationId, getScrollViewport, scrollToBottom]);
+
+  const fetchThreadMessages = useCallback(async () => {
+    if (threadConversationIds.length === 0) return [];
+
+    const latestConversationId = threadConversationIds[0];
+    const messageBatches = await Promise.all(
+      threadConversationIds.map((threadConversationId) => {
+        const queryKey = conversationMessagesQueryKey(threadConversationId);
+        const cachedMessages = queryClient.getQueryData<Message[]>(queryKey);
+
+        if (cachedMessages && threadConversationId !== latestConversationId) {
+          return cachedMessages;
         }
-      });
 
-      // Attach reactions to their corresponding messages
-      const messagesWithReactions = regularMessages.map((msg: Message) => {
-        const reaction = reactionMap.get(msg.id);
-        return reaction ? { ...msg, reactionEmoji: reaction } : msg;
-      });
+        return queryClient.fetchQuery({
+          queryKey,
+          queryFn: () => fetchConversationMessages(threadConversationId),
+          staleTime: 0,
+        });
+      }),
+    );
 
-      const sortedMessages = messagesWithReactions.sort((a: Message, b: Message) => {
-        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      });
+    return normalizeMessages(messageBatches.flat());
+  }, [queryClient, threadConversationIds]);
 
-      setMessages(sortedMessages);
-      previousMessageCountRef.current = sortedMessages.length;
-    } catch (error) {
-      console.error('Error fetching messages:', error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [conversationId]);
+  const { data: messages = [], isPending: loading } = useQuery({
+    queryKey: threadMessagesQueryKey,
+    queryFn: fetchThreadMessages,
+    enabled: threadConversationIds.length > 0,
+    refetchInterval: 5_000,
+    refetchOnMount: false,
+  });
+
+  const refreshCurrentThread = useCallback(async () => {
+    if (threadConversationIds.length === 0) return;
+
+    const messageBatches = await Promise.all(
+      threadConversationIds.map((threadConversationId) =>
+        queryClient.fetchQuery({
+          queryKey: conversationMessagesQueryKey(threadConversationId),
+          queryFn: () => fetchConversationMessages(threadConversationId),
+          staleTime: 0,
+        }),
+      ),
+    );
+
+    queryClient.setQueryData(
+      threadMessagesQueryKey,
+      normalizeMessages(messageBatches.flat()),
+    );
+  }, [queryClient, threadConversationIds, threadMessagesQueryKey]);
 
   useEffect(() => {
-    if (conversationId) {
-      setLoading(true);
-      fetchMessages();
-    }
-  }, [conversationId, fetchMessages]);
-
-  useEffect(() => {
-    // Only auto-scroll if user is near bottom
     if (isNearBottom) {
       scrollToBottom();
     }
-  }, [messages, isNearBottom]);
+  }, [messages, isNearBottom, scrollToBottom]);
+
+  useEffect(() => {
+    if (loading || messages.length === 0 || !threadKey) return;
+    if (lastInitialScrollKeyRef.current === initialScrollKey) return;
+
+    lastInitialScrollKeyRef.current = initialScrollKey;
+    setIsNearBottom(true);
+
+    const viewport = getScrollViewport();
+    const content = viewport?.firstElementChild;
+    let animationFrameId = 0;
+    let secondAnimationFrameId = 0;
+    let timeoutId = 0;
+    let resizeObserver: ResizeObserver | null = null;
+    let stopped = false;
+
+    const stopInitialScrollSync = () => {
+      stopped = true;
+      window.cancelAnimationFrame(animationFrameId);
+      window.cancelAnimationFrame(secondAnimationFrameId);
+      window.clearTimeout(timeoutId);
+      resizeObserver?.disconnect();
+      viewport?.removeEventListener("wheel", stopInitialScrollSync);
+      viewport?.removeEventListener("touchstart", stopInitialScrollSync);
+    };
+
+    const syncSelectedConversationScroll = () => {
+      if (stopped) return;
+
+      scrollToSelectedConversation();
+    };
+
+    if (viewport) {
+      viewport.addEventListener("wheel", stopInitialScrollSync, {
+        passive: true,
+      });
+      viewport.addEventListener("touchstart", stopInitialScrollSync, {
+        passive: true,
+      });
+    }
+
+    if (typeof ResizeObserver !== "undefined" && content) {
+      resizeObserver = new ResizeObserver(syncSelectedConversationScroll);
+      resizeObserver.observe(content);
+    }
+
+    syncSelectedConversationScroll();
+    animationFrameId = window.requestAnimationFrame(() => {
+      syncSelectedConversationScroll();
+      secondAnimationFrameId = window.requestAnimationFrame(
+        syncSelectedConversationScroll,
+      );
+    });
+    timeoutId = window.setTimeout(stopInitialScrollSync, 1_000);
+
+    return stopInitialScrollSync;
+  }, [
+    getScrollViewport,
+    initialScrollKey,
+    loading,
+    messages.length,
+    scrollToSelectedConversation,
+    threadKey,
+  ]);
 
   useEffect(() => {
     setCanSendRegularMessage(isWithin24HourWindow(messages));
@@ -255,7 +403,9 @@ export function MessageView({ conversationId, phoneNumber, contactName, lastActi
     if (!container) return;
 
     const handleScroll = () => {
-      const viewport = container.querySelector('[data-radix-scroll-area-viewport]');
+      const viewport = container.querySelector(
+        "[data-radix-scroll-area-viewport]",
+      );
       if (!viewport) return;
 
       const { scrollTop, scrollHeight, clientHeight } = viewport;
@@ -263,24 +413,23 @@ export function MessageView({ conversationId, phoneNumber, contactName, lastActi
       setIsNearBottom(distanceFromBottom < 100);
     };
 
-    const viewport = container.querySelector('[data-radix-scroll-area-viewport]');
+    const viewport = container.querySelector(
+      "[data-radix-scroll-area-viewport]",
+    );
     if (viewport) {
-      viewport.addEventListener('scroll', handleScroll);
-      return () => viewport.removeEventListener('scroll', handleScroll);
+      viewport.addEventListener("scroll", handleScroll);
+      return () => viewport.removeEventListener("scroll", handleScroll);
     }
   }, []);
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setRefreshing(true);
-    fetchMessages();
+    try {
+      await refreshCurrentThread();
+    } finally {
+      setRefreshing(false);
+    }
   };
-
-  // Auto-polling for messages (every 5 seconds)
-  useAutoPolling({
-    interval: 5000,
-    enabled: !!conversationId,
-    onPoll: fetchMessages
-  });
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -289,7 +438,7 @@ export function MessageView({ conversationId, phoneNumber, contactName, lastActi
     setSelectedFile(file);
 
     // Create preview for images
-    if (file.type.startsWith('image/')) {
+    if (file.type.startsWith("image/")) {
       const reader = new FileReader();
       reader.onloadend = () => {
         setFilePreview(reader.result as string);
@@ -304,45 +453,48 @@ export function MessageView({ conversationId, phoneNumber, contactName, lastActi
     setSelectedFile(null);
     setFilePreview(null);
     if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      fileInputRef.current.value = "";
     }
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if ((!messageInput.trim() && !selectedFile) || !phoneNumber || sending) return;
+    if ((!messageInput.trim() && !selectedFile) || !phoneNumber || sending)
+      return;
 
     setSending(true);
     try {
       const formData = new FormData();
-      formData.append('to', phoneNumber);
+      formData.append("to", phoneNumber);
       if (messageInput.trim()) {
-        formData.append('body', messageInput);
+        formData.append("body", messageInput);
       }
       if (selectedFile) {
-        formData.append('file', selectedFile);
+        formData.append("file", selectedFile);
       }
 
-      await fetch('/api/messages/send', {
-        method: 'POST',
-        body: formData
+      await fetch("/api/messages/send", {
+        method: "POST",
+        body: formData,
       });
 
-      setMessageInput('');
+      setMessageInput("");
       handleRemoveFile();
-      await fetchMessages();
+      await queryClient.invalidateQueries({
+        queryKey: CONVERSATIONS_QUERY_KEY,
+      });
+      await refreshCurrentThread();
     } catch (error) {
-      console.error('Error sending message:', error);
+      console.error("Error sending message:", error);
     } finally {
       setSending(false);
     }
   };
 
   const handleTemplateSent = async () => {
-    await fetchMessages();
+    await refreshCurrentThread();
 
-    // Notify parent to refresh conversation list and select this conversation
     if (phoneNumber && onTemplateSent) {
       await onTemplateSent(phoneNumber);
     }
@@ -350,10 +502,12 @@ export function MessageView({ conversationId, phoneNumber, contactName, lastActi
 
   if (!conversationId) {
     return (
-      <div className={cn(
-        "flex min-h-0 min-w-0 flex-1 items-center justify-center bg-muted/50 p-6 text-center",
-        !isVisible && "hidden md:flex"
-      )}>
+      <div
+        className={cn(
+          "flex min-h-0 min-w-0 flex-1 items-center justify-center bg-muted/50 p-6 text-center",
+          !isVisible && "hidden md:flex",
+        )}
+      >
         <p className="max-w-sm text-sm leading-6 text-muted-foreground">
           Select a conversation to view messages
         </p>
@@ -363,10 +517,12 @@ export function MessageView({ conversationId, phoneNumber, contactName, lastActi
 
   if (loading) {
     return (
-      <div className={cn(
-        "flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--chat-canvas)]",
-        !isVisible && "hidden md:flex"
-      )}>
+      <div
+        className={cn(
+          "flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--chat-canvas)]",
+          !isVisible && "hidden md:flex",
+        )}
+      >
         <div className="border-b border-[var(--chat-border-strong)] bg-[var(--chat-toolbar)] p-2.5 safe-area-top sm:p-3">
           <div className="flex items-center justify-between pt-1">
             <div className="flex items-center gap-2 flex-1">
@@ -395,11 +551,19 @@ export function MessageView({ conversationId, phoneNumber, contactName, lastActi
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-4 lg:p-6">
           <div className="mx-auto w-full max-w-[900px] space-y-3">
             {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className={cn('flex mb-2', i % 2 === 0 ? 'justify-end' : 'justify-start')}>
-                <div className={cn(
-                  'max-w-[min(88%,34rem)] rounded-lg px-3 py-2 shadow-sm sm:max-w-[min(78%,38rem)] lg:max-w-[min(70%,42rem)]',
-                  i % 2 === 0 ? 'rounded-br-none' : 'rounded-bl-none'
-                )}>
+              <div
+                key={i}
+                className={cn(
+                  "flex mb-2",
+                  i % 2 === 0 ? "justify-end" : "justify-start",
+                )}
+              >
+                <div
+                  className={cn(
+                    "max-w-[min(88%,34rem)] rounded-lg px-3 py-2 shadow-sm sm:max-w-[min(78%,38rem)] lg:max-w-[min(70%,42rem)]",
+                    i % 2 === 0 ? "rounded-br-none" : "rounded-bl-none",
+                  )}
+                >
                   <Skeleton
                     className="h-4 max-w-full mb-2"
                     style={{ width: `${MESSAGE_SKELETON_WIDTHS[i - 1]}px` }}
@@ -415,10 +579,12 @@ export function MessageView({ conversationId, phoneNumber, contactName, lastActi
   }
 
   return (
-    <div className={cn(
-      "flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--chat-canvas)]",
-      !isVisible && "hidden md:flex"
-    )}>
+    <div
+      className={cn(
+        "flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--chat-canvas)]",
+        !isVisible && "hidden md:flex",
+      )}
+    >
       <div className="border-b border-[var(--chat-border-strong)] bg-[var(--chat-toolbar)] p-2.5 safe-area-top sm:p-3">
         <div className="flex items-center justify-between pt-1">
           <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -434,10 +600,14 @@ export function MessageView({ conversationId, phoneNumber, contactName, lastActi
               </Button>
             )}
             <div className="flex-1 min-w-0">
-              <h2 className="truncate text-sm font-medium text-foreground sm:text-base">{contactName || phoneNumber || 'Conversation'}</h2>
+              <h2 className="truncate text-sm font-medium text-foreground sm:text-base">
+                {contactName || phoneNumber || "Conversation"}
+              </h2>
               {displayPhoneNumber && (
                 <p className="truncate text-xs text-muted-foreground">
-                  {lastSeenText ? `Active · ${lastSeenText} · ${displayPhoneNumber}` : displayPhoneNumber}
+                  {lastSeenText
+                    ? `Active · ${lastSeenText} · ${displayPhoneNumber}`
+                    : displayPhoneNumber}
                 </p>
               )}
             </div>
@@ -453,23 +623,53 @@ export function MessageView({ conversationId, phoneNumber, contactName, lastActi
               aria-label="Refresh messages"
               title="Refresh messages"
             >
-              <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
+              <RefreshCw
+                className={cn("h-4 w-4", refreshing && "animate-spin")}
+              />
             </Button>
           </div>
         </div>
       </div>
 
-      <ScrollArea ref={messagesContainerRef} className="h-0 flex-1 overscroll-contain p-3 sm:p-4 lg:p-6">
+      <ScrollArea
+        ref={messagesContainerRef}
+        className="h-0 flex-1 overscroll-contain p-3 sm:p-4 lg:p-6"
+      >
         <div className="mx-auto w-full max-w-[900px]">
           {messages.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">No messages yet</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No messages yet
+            </p>
           ) : (
             messages.map((message, index) => {
               const prevMessage = index > 0 ? messages[index - 1] : null;
-              const showDateDivider = shouldShowDateDivider(message, prevMessage);
+              const showDateDivider = shouldShowDateDivider(
+                message,
+                prevMessage,
+              );
+              const showConversationDivider = shouldShowConversationDivider(
+                message,
+                prevMessage,
+              );
 
               return (
-                <div key={message.id}>
+                <div
+                  key={message.id}
+                  data-message-id={message.id}
+                  data-conversation-id={message.conversationId}
+                >
+                  {showConversationDivider && (
+                    <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
+                      <div className="h-px flex-1 bg-[var(--chat-border)]" />
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--chat-canvas)] px-2 py-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-[var(--chat-presence)]" />
+                        Conversation{" "}
+                        {shortConversationId(message.conversationId)}
+                      </span>
+                      <div className="h-px flex-1 bg-[var(--chat-border)]" />
+                    </div>
+                  )}
+
                   {showDateDivider && (
                     <div className="flex justify-center my-4">
                       <Badge variant="secondary" className="shadow-sm">
@@ -480,52 +680,70 @@ export function MessageView({ conversationId, phoneNumber, contactName, lastActi
 
                   <div
                     className={cn(
-                      'flex mb-2',
-                      message.direction === 'outbound' ? 'justify-end' : 'justify-start'
+                      "flex mb-2",
+                      message.direction === "outbound"
+                        ? "justify-end"
+                        : "justify-start",
                     )}
                   >
                     <div
                       className={cn(
-                        'relative max-w-[min(88%,34rem)] rounded-lg px-3 py-2 shadow-sm sm:max-w-[min(78%,38rem)] lg:max-w-[min(70%,42rem)]',
-                        message.direction === 'outbound'
-                          ? 'bg-[var(--chat-bubble-outgoing)] text-foreground rounded-br-none'
-                          : 'bg-[var(--chat-bubble-incoming)] text-foreground rounded-bl-none'
+                        "relative max-w-[min(88%,34rem)] rounded-lg px-3 py-2 shadow-sm sm:max-w-[min(78%,38rem)] lg:max-w-[min(70%,42rem)]",
+                        message.direction === "outbound"
+                          ? "bg-[var(--chat-bubble-outgoing)] text-foreground rounded-br-none"
+                          : "bg-[var(--chat-bubble-incoming)] text-foreground rounded-bl-none",
                       )}
                     >
                       {message.hasMedia && message.mediaData?.url ? (
                         <div className="mb-2">
-                          {message.messageType === 'sticker' ? (
+                          {message.messageType === "sticker" ? (
                             <img
                               src={message.mediaData.url}
                               alt="Sticker"
                               className="h-auto max-h-[150px] max-w-[150px]"
                             />
-                          ) : message.mediaData.contentType?.startsWith('image/') || message.messageType === 'image' ? (
+                          ) : message.mediaData.contentType?.startsWith(
+                              "image/",
+                            ) || message.messageType === "image" ? (
                             <img
                               src={message.mediaData.url}
                               alt="Media"
                               className="h-auto max-h-96 max-w-full rounded outline outline-1 [outline-color:var(--chat-media-outline)]"
                             />
-                          ) : message.mediaData.contentType?.startsWith('video/') || message.messageType === 'video' ? (
+                          ) : message.mediaData.contentType?.startsWith(
+                              "video/",
+                            ) || message.messageType === "video" ? (
                             <video
                               src={message.mediaData.url}
                               controls
                               className="h-auto max-h-96 max-w-full rounded outline outline-1 [outline-color:var(--chat-media-outline)]"
                             />
-                          ) : message.mediaData.contentType?.startsWith('audio/') || message.messageType === 'audio' ? (
-                            <audio src={message.mediaData.url} controls className="w-full" />
+                          ) : message.mediaData.contentType?.startsWith(
+                              "audio/",
+                            ) || message.messageType === "audio" ? (
+                            <audio
+                              src={message.mediaData.url}
+                              controls
+                              className="w-full"
+                            />
                           ) : (
                             <a
                               href={message.mediaData.url}
                               target="_blank"
                               rel="noopener noreferrer"
                               className={cn(
-                                'flex min-w-0 items-center gap-2 text-sm underline hover:opacity-80',
-                                message.direction === 'outbound' ? 'text-primary' : 'text-primary'
+                                "flex min-w-0 items-center gap-2 text-sm underline hover:opacity-80",
+                                message.direction === "outbound"
+                                  ? "text-primary"
+                                  : "text-primary",
                               )}
                             >
                               <Paperclip className="h-4 w-4 flex-shrink-0" />
-                              <span className="truncate">{message.mediaData.filename || message.filename || 'Download file'}</span>
+                              <span className="truncate">
+                                {message.mediaData.filename ||
+                                  message.filename ||
+                                  "Download file"}
+                              </span>
                             </a>
                           )}
                         </div>
@@ -536,7 +754,7 @@ export function MessageView({ conversationId, phoneNumber, contactName, lastActi
                             messageType={message.messageType}
                             caption={message.caption}
                             filename={message.filename}
-                            isOutbound={message.direction === 'outbound'}
+                            isOutbound={message.direction === "outbound"}
                           />
                         </div>
                       ) : null}
@@ -547,11 +765,12 @@ export function MessageView({ conversationId, phoneNumber, contactName, lastActi
                         </p>
                       )}
 
-                      {message.content && message.content !== '[Image attached]' && (
-                        <p className="text-sm break-words whitespace-pre-wrap">
-                          {message.content}
-                        </p>
-                      )}
+                      {message.content &&
+                        message.content !== "[Image attached]" && (
+                          <p className="text-sm break-words whitespace-pre-wrap">
+                            {message.content}
+                          </p>
+                        )}
 
                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
                         <span className="text-[11px] tabular-nums text-muted-foreground">
@@ -564,24 +783,25 @@ export function MessageView({ conversationId, phoneNumber, contactName, lastActi
                           </span>
                         )}
 
-                        {message.direction === 'outbound' && message.status && (
+                        {message.direction === "outbound" && message.status && (
                           <>
-                          {message.status === 'failed' ? (
-                            <XCircle className="h-3.5 w-3.5 text-red-500" />
-                          ) : (
-                            <MessageStatusChecks status={message.status} />
-                          )}
+                            {message.status === "failed" ? (
+                              <XCircle className="h-3.5 w-3.5 text-red-500" />
+                            ) : (
+                              <MessageStatusChecks status={message.status} />
+                            )}
                           </>
                         )}
                       </div>
 
-                      {message.direction === 'outbound' && message.status === 'failed' && (
-                        <div className="mt-1">
-                          <span className="text-[11px] text-red-500 flex items-center gap-1">
-                            Not delivered
-                          </span>
-                        </div>
-                      )}
+                      {message.direction === "outbound" &&
+                        message.status === "failed" && (
+                          <div className="mt-1">
+                            <span className="text-[11px] text-red-500 flex items-center gap-1">
+                              Not delivered
+                            </span>
+                          </div>
+                        )}
 
                       {message.reactionEmoji && (
                         <div className="absolute -bottom-2 -right-2 bg-background rounded-full px-1.5 py-0.5 text-sm shadow-sm border">
@@ -616,8 +836,12 @@ export function MessageView({ conversationId, phoneNumber, contactName, lastActi
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{selectedFile.name}</p>
-                    <p className="text-xs tabular-nums text-muted-foreground">{(selectedFile.size / 1024).toFixed(1)} KB</p>
+                    <p className="text-sm font-medium text-foreground truncate">
+                      {selectedFile.name}
+                    </p>
+                    <p className="text-xs tabular-nums text-muted-foreground">
+                      {(selectedFile.size / 1024).toFixed(1)} KB
+                    </p>
                   </div>
                   <Button
                     onClick={handleRemoveFile}
@@ -633,7 +857,10 @@ export function MessageView({ conversationId, phoneNumber, contactName, lastActi
               </div>
             )}
 
-            <form onSubmit={handleSendMessage} className="mx-auto flex w-full max-w-[900px] items-end gap-1.5 px-2.5 py-2 sm:gap-2 sm:p-3">
+            <form
+              onSubmit={handleSendMessage}
+              className="mx-auto flex w-full max-w-[900px] items-end gap-1.5 px-2.5 py-2 sm:gap-2 sm:p-3"
+            >
               <input
                 ref={fileInputRef}
                 type="file"
@@ -711,7 +938,7 @@ export function MessageView({ conversationId, phoneNumber, contactName, lastActi
       <TemplateSelectorDialog
         open={showTemplateDialog}
         onOpenChange={setShowTemplateDialog}
-        phoneNumber={phoneNumber || ''}
+        phoneNumber={phoneNumber || ""}
         onTemplateSent={handleTemplateSent}
       />
 
@@ -720,7 +947,12 @@ export function MessageView({ conversationId, phoneNumber, contactName, lastActi
         onOpenChange={setShowInteractiveDialog}
         conversationId={conversationId}
         phoneNumber={phoneNumber}
-        onMessageSent={fetchMessages}
+        onMessageSent={async () => {
+          await queryClient.invalidateQueries({
+            queryKey: CONVERSATIONS_QUERY_KEY,
+          });
+          await refreshCurrentThread();
+        }}
       />
     </div>
   );
