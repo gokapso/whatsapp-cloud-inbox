@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { QueryProvider } from "@/components/query-provider";
 import "./globals.css";
 
 const themeInitScript = `
@@ -55,7 +56,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className="antialiased">
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-        {children}
+        <QueryProvider>{children}</QueryProvider>
       </body>
     </html>
   );
