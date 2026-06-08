@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
-import { whatsappClient, PHONE_NUMBER_ID } from '@/lib/whatsapp-client';
+import { configurationErrorResponse, resolvePhoneNumberContext } from '@/lib/inbox-settings';
+import { whatsappClient } from '@/lib/whatsapp-client';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { phoneNumber, header, body: bodyText, buttons } = body;
+    const { phoneNumber, header, body: bodyText, buttons, phoneNumberId: requestedPhoneNumberId } = body;
+    const configuredPhoneNumber = await resolvePhoneNumberContext(requestedPhoneNumberId);
+    const phoneNumberId = configuredPhoneNumber.phone_number_id;
 
     if (!phoneNumber || !bodyText || !buttons || buttons.length === 0) {
       return NextResponse.json(
@@ -29,7 +32,7 @@ export async function POST(request: Request) {
       header?: { type: 'text'; text: string };
       buttons: Array<{ id: string; title: string }>;
     } = {
-      phoneNumberId: PHONE_NUMBER_ID,
+      phoneNumberId,
       to: phoneNumber,
       bodyText,
       buttons: buttons.map((btn: { id: string; title: string }) => ({
@@ -52,9 +55,6 @@ export async function POST(request: Request) {
     return NextResponse.json(result);
   } catch (error) {
     console.error('Error sending interactive message:', error);
-    return NextResponse.json(
-      { error: 'Failed to send interactive message' },
-      { status: 500 }
-    );
+    return configurationErrorResponse(error);
   }
 }

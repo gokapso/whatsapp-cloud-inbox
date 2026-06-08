@@ -25,6 +25,7 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   conversationId?: string;
   phoneNumber?: string;
+  phoneNumberId?: string;
   onMessageSent?: () => void;
 };
 
@@ -33,6 +34,7 @@ export function InteractiveMessageDialog({
   onOpenChange,
   conversationId,
   phoneNumber,
+  phoneNumberId,
   onMessageSent,
 }: Props) {
   const [header, setHeader] = useState('');
@@ -102,6 +104,7 @@ export function InteractiveMessageDialog({
         body: JSON.stringify({
           conversationId,
           phoneNumber,
+          phoneNumberId,
           header: header.trim() || undefined,
           body: body.trim(),
           buttons: buttons.map(btn => ({

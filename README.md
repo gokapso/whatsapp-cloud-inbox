@@ -2,7 +2,7 @@
 
 A WhatsApp Web-style inbox built with Next.js for the WhatsApp Cloud API. Send messages, templates, and interactive buttons with a familiar UI.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fgokapso%2Fwhatsapp-cloud-inbox&env=PHONE_NUMBER_ID,KAPSO_API_KEY,WABA_ID&envDescription=Get%20these%20credentials%20from%20app.kapso.ai&envLink=https%3A%2F%2Fapp.kapso.ai)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fgokapso%2Fwhatsapp-cloud-inbox&env=KAPSO_API_KEY&envDescription=Get%20your%20Kapso%20API%20key%20from%20app.kapso.ai&envLink=https%3A%2F%2Fapp.kapso.ai)
 
 ![WhatsApp Cloud Inbox](https://cdn.jsdelivr.net/gh/gokapso/whatsapp-cloud-inbox@main/assets/kapso-whatsapp-inbox.png)
 
@@ -22,10 +22,7 @@ A WhatsApp Web-style inbox built with Next.js for the WhatsApp Cloud API. Send m
 
 1. Create account at [app.kapso.ai](https://app.kapso.ai)
 2. Connect a WhatsApp number
-3. Get your credentials:
-   - `PHONE_NUMBER_ID`
-   - `KAPSO_API_KEY`
-   - `WABA_ID`
+3. Get your Kapso API key
 
 ### 2. Clone and install
 
@@ -40,10 +37,15 @@ npm install
 Create `.env`:
 
 ```env
-PHONE_NUMBER_ID=your_phone_number_id
 KAPSO_API_KEY=your_kapso_api_key
-WABA_ID=your_business_account_id
 WHATSAPP_API_URL=https://api.kapso.ai/meta/whatsapp  # Optional: custom API endpoint
+
+# Optional: only needed when your platform API is on a different host
+KAPSO_API_BASE_URL=https://api.kapso.ai
+
+# Optional: backwards-compatible single-number fallback
+PHONE_NUMBER_ID=your_phone_number_id
+WABA_ID=your_business_account_id
 ```
 
 ### 4. Run
@@ -53,6 +55,8 @@ npm run dev
 ```
 
 Open [http://localhost:4000](http://localhost:4000)
+
+Open [http://localhost:4000/settings](http://localhost:4000/settings) to choose which WhatsApp numbers the inbox tracks. The app discovers `PHONE_NUMBER_ID` and `WABA_ID` values from Kapso using `KAPSO_API_KEY`, then stores the selected numbers in an HTTP-only cookie.
 
 ## Key Features
 

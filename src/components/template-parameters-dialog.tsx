@@ -24,6 +24,7 @@ type Props = {
   template: Template;
   parameterInfo: TemplateParameterInfo;
   phoneNumber: string;
+  phoneNumberId?: string;
   onBack: () => void;
   onTemplateSent?: () => void;
 };
@@ -34,6 +35,7 @@ export function TemplateParametersDialog({
   template,
   parameterInfo,
   phoneNumber,
+  phoneNumberId,
   onBack,
   onTemplateSent,
 }: Props) {
@@ -69,6 +71,7 @@ export function TemplateParametersDialog({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to: phoneNumber,
+          phoneNumberId,
           templateName: template.name,
           languageCode: template.language,
           parameters: formattedParameters,

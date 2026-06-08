@@ -5,7 +5,8 @@ import {
   type MediaData,
   type MetaMessage
 } from '@kapso/whatsapp-cloud-api';
-import { whatsappClient, PHONE_NUMBER_ID } from '@/lib/whatsapp-client';
+import { configurationErrorResponse, resolvePhoneNumberContext } from '@/lib/inbox-settings';
+import { whatsappClient } from '@/lib/whatsapp-client';
 
 type MessageTypeData = {
   filename?: string;
@@ -74,6 +75,46 @@ function extractMediaData(mediaData: MediaData | undefined): Pick<MediaData, 'fi
   };
 }
 
+function isGeneratedMediaAttachmentContent(content: string, mediaUrl?: string): boolean {
+  const trimmedContent = content.trim();
+  if (!trimmedContent) return false;
+  if (mediaUrl && trimmedContent === mediaUrl.trim()) return true;
+  if (/^https?:\/\//i.test(trimmedContent)) return true;
+  if (/\bURL:\s*https?:\/\//i.test(trimmedContent)) return true;
+  return /^(image|audio)\s+attached\b/i.test(trimmedContent);
+}
+
+function extractTranscriptContent(content: string): string | undefined {
+  const match = content.match(/\bTranscript:\s*[\s\S]*$/i);
+  if (!match) return undefined;
+
+  return match[0]
+    .replace(/\s+\bURL:\s*https?:\/\/\S+[\s\S]*$/i, '')
+    .trim();
+}
+
+function normalizeMessageContent(input: {
+  content?: string;
+  messageType: string;
+  mediaUrl?: string;
+}): string {
+  if (!input.content) return '';
+
+  if (input.messageType === 'audio') {
+    return extractTranscriptContent(input.content) ??
+      (isGeneratedMediaAttachmentContent(input.content, input.mediaUrl) ? '' : input.content);
+  }
+
+  if (
+    input.messageType === 'image' &&
+    isGeneratedMediaAttachmentContent(input.content, input.mediaUrl)
+  ) {
+    return '';
+  }
+
+  return input.content;
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ conversationId: string }> }
@@ -83,9 +124,11 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const parsedLimit = Number.parseInt(searchParams.get('limit') ?? '', 10);
     const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 100) : 50;
+    const phoneNumber = await resolvePhoneNumberContext(searchParams.get('phoneNumberId') ?? undefined);
+    const phoneNumberId = phoneNumber.phone_number_id;
 
     const response = await whatsappClient.messages.listByConversation({
-      phoneNumberId: PHONE_NUMBER_ID,
+      phoneNumberId,
       conversationId,
       limit,
       fields: buildKapsoFields([
@@ -148,6 +191,11 @@ export async function GET(
       const kapsoContent = normaliseKapsoContent(kapsoExtensions?.content);
       const textBody = typeof text?.body === 'string' ? text.body : undefined;
       const reactionEmoji = typeof reaction?.emoji === 'string' ? reaction.emoji : undefined;
+      const content = normalizeMessageContent({
+        content: kapsoContent ?? textBody ?? reactionEmoji,
+        messageType: msg.type,
+        mediaUrl
+      });
 
       const fallbackCaption =
         (typeof image?.caption === 'string' && image.caption) ||
@@ -159,8 +207,9 @@ export async function GET(
 
       return {
         id: msg.id,
+        phoneNumberId,
         direction: typeof kapsoExtensions?.direction === 'string' ? kapsoExtensions.direction : 'inbound',
-        content: kapsoContent ?? textBody ?? reactionEmoji ?? fallbackCaption ?? '',
+        content,
         createdAt: toIsoString(msg.timestamp, lastMessageTimestamp),
         status: typeof kapsoExtensions?.status === 'string' ? kapsoExtensions.status : undefined,
         phoneNumber: typeof kapsoExtensions?.phoneNumber === 'string' ? kapsoExtensions.phoneNumber : msg.from,
@@ -186,9 +235,9 @@ export async function GET(
     });
   } catch (error) {
     console.error('Error fetching messages:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch messages', conversationId },
-      { status: 500 }
-    );
+    if (error instanceof Error) {
+      return configurationErrorResponse(error);
+    }
+    return NextResponse.json({ error: 'Failed to fetch messages', conversationId }, { status: 500 });
   }
 }
