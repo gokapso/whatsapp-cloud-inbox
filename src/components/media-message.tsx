@@ -7,13 +7,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 type Props = {
   mediaId: string;
+  phoneNumberId?: string;
   messageType: string;
   caption?: string | null;
   filename?: string | null;
   isOutbound?: boolean;
 };
 
-export function MediaMessage({ mediaId, messageType, caption, filename, isOutbound }: Props) {
+export function MediaMessage({ mediaId, phoneNumberId, messageType, caption, filename, isOutbound }: Props) {
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -24,10 +25,14 @@ export function MediaMessage({ mediaId, messageType, caption, filename, isOutbou
 
   useEffect(() => {
     // Set the media URL to point to our proxy endpoint
-    setMediaUrl(`/api/media/${mediaId}`);
+    const params = new URLSearchParams();
+    if (phoneNumberId) {
+      params.set('phoneNumberId', phoneNumberId);
+    }
+    setMediaUrl(`/api/media/${mediaId}${params.size ? `?${params.toString()}` : ''}`);
     setLoading(false);
     setLoadFailed(false);
-  }, [mediaId]);
+  }, [mediaId, phoneNumberId]);
 
   if (loading) {
     return (

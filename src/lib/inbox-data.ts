@@ -8,6 +8,9 @@ export type Conversation = {
   status: string;
   lastActiveAt?: string;
   phoneNumberId: string;
+  inboxPhoneNumber?: string;
+  inboxDisplayName?: string;
+  businessAccountId?: string;
   metadata?: Record<string, unknown>;
   contactName?: string;
   messagesCount?: number;
@@ -21,6 +24,7 @@ export type Conversation = {
 export type Message = {
   id: string;
   conversationId: string;
+  phoneNumberId: string;
   direction: 'inbound' | 'outbound';
   content: string;
   createdAt: string;
@@ -47,6 +51,10 @@ export type Message = {
 export type ConversationThread = {
   key: string;
   phoneNumber: string;
+  phoneNumberId: string;
+  inboxPhoneNumber?: string;
+  inboxDisplayName?: string;
+  businessAccountId?: string;
   contactName?: string;
   conversations: Conversation[];
   latestConversation: Conversation;
@@ -59,12 +67,16 @@ export type ConversationThread = {
 
 export const CONVERSATIONS_QUERY_KEY = ['conversations'] as const;
 
-export function conversationMessagesQueryKey(conversationId: string) {
-  return ['conversation-messages', conversationId] as const;
+export function conversationMessagesQueryKey(phoneNumberId: string | undefined, conversationId: string) {
+  return ['conversation-messages', phoneNumberId ?? '', conversationId] as const;
 }
 
-export function phoneThreadMessagesQueryKey(phoneNumber: string | undefined, conversationIds: string[]) {
-  return ['phone-thread-messages', phoneNumber ?? '', conversationIds.join(':')] as const;
+export function phoneThreadMessagesQueryKey(
+  phoneNumberId: string | undefined,
+  phoneNumber: string | undefined,
+  conversationIds: string[]
+) {
+  return ['phone-thread-messages', phoneNumberId ?? '', phoneNumber ?? '', conversationIds.join(':')] as const;
 }
 
 function parseTimestamp(timestamp?: string): number {
@@ -76,7 +88,8 @@ function parseTimestamp(timestamp?: string): number {
 function conversationGroupKey(conversation: Conversation): string {
   const phoneNumber = conversation.phoneNumber.trim();
   const comparablePhoneNumber = phoneNumber.replace(/\D/g, '');
-  return comparablePhoneNumber || phoneNumber || `conversation:${conversation.id}`;
+  const contactKey = comparablePhoneNumber || phoneNumber || `conversation:${conversation.id}`;
+  return `${conversation.phoneNumberId}:${contactKey}`;
 }
 
 function byMostRecentConversation(a: Conversation, b: Conversation): number {
@@ -96,8 +109,13 @@ export async function fetchConversations(): Promise<Conversation[]> {
   return data.data || [];
 }
 
-export async function fetchConversationMessages(conversationId: string): Promise<Message[]> {
-  const response = await fetch(`/api/messages/${conversationId}?limit=100`);
+export async function fetchConversationMessages(conversationId: string, phoneNumberId?: string): Promise<Message[]> {
+  const params = new URLSearchParams({ limit: '100' });
+  if (phoneNumberId) {
+    params.set('phoneNumberId', phoneNumberId);
+  }
+
+  const response = await fetch(`/api/messages/${conversationId}?${params.toString()}`);
   const data = await response.json();
 
   if (!response.ok) {
@@ -106,6 +124,7 @@ export async function fetchConversationMessages(conversationId: string): Promise
 
   const messages = (data.data || []).map((message: Omit<Message, 'conversationId'>) => ({
     ...message,
+    phoneNumberId: message.phoneNumberId ?? phoneNumberId ?? '',
     conversationId,
   }));
 
@@ -130,6 +149,10 @@ export function groupConversationsByPhoneNumber(conversations: Conversation[]): 
       return {
         key,
         phoneNumber: latestConversation.phoneNumber,
+        phoneNumberId: latestConversation.phoneNumberId,
+        inboxPhoneNumber: latestConversation.inboxPhoneNumber,
+        inboxDisplayName: latestConversation.inboxDisplayName,
+        businessAccountId: latestConversation.businessAccountId,
         contactName: latestConversation.contactName || sortedConversations.find(conversation => conversation.contactName)?.contactName,
         conversations: sortedConversations,
         latestConversation,
@@ -159,6 +182,8 @@ export function filterConversationThreads(
 
     return (
       thread.phoneNumber.toLowerCase().includes(normalizedQuery) ||
+      thread.inboxPhoneNumber?.toLowerCase().includes(normalizedQuery) ||
+      thread.inboxDisplayName?.toLowerCase().includes(normalizedQuery) ||
       thread.contactName?.toLowerCase().includes(normalizedQuery) ||
       thread.conversations.some(conversation => conversation.id.toLowerCase().includes(normalizedQuery))
     );

@@ -33,7 +33,7 @@ export default function Home() {
     setSelectedThreadKey(thread.key);
   };
 
-  const handleTemplateSent = async (phoneNumber: string) => {
+  const handleTemplateSent = async (phoneNumber: string, phoneNumberId?: string) => {
     const refreshedConversations = await queryClient.fetchQuery({
       queryKey: CONVERSATIONS_QUERY_KEY,
       queryFn: fetchConversations,
@@ -41,9 +41,12 @@ export default function Home() {
     });
     const phoneNumberKey = phoneNumber.replace(/\D/g, '') || phoneNumber;
     const refreshedThread = groupConversationsByPhoneNumber(refreshedConversations)
-      .find(thread => thread.key === phoneNumberKey || thread.phoneNumber === phoneNumber);
+      .find(thread =>
+        (!phoneNumberId || thread.phoneNumberId === phoneNumberId) &&
+        (thread.key.endsWith(`:${phoneNumberKey}`) || thread.phoneNumber === phoneNumber)
+      );
 
-    setSelectedThreadKey(refreshedThread?.key ?? phoneNumberKey);
+    setSelectedThreadKey(refreshedThread?.key ?? (phoneNumberId ? `${phoneNumberId}:${phoneNumberKey}` : phoneNumberKey));
   };
 
   const handleBackToList = () => {
@@ -61,6 +64,9 @@ export default function Home() {
         conversationId={selectedThread?.latestConversation.id}
         conversations={selectedThread?.conversations || []}
         phoneNumber={selectedThread?.phoneNumber}
+        phoneNumberId={selectedThread?.phoneNumberId}
+        inboxPhoneNumber={selectedThread?.inboxPhoneNumber}
+        inboxDisplayName={selectedThread?.inboxDisplayName}
         contactName={selectedThread?.contactName}
         lastActiveAt={selectedThread?.lastActiveAt}
         onTemplateSent={handleTemplateSent}

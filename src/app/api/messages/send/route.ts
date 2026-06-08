@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { whatsappClient, PHONE_NUMBER_ID } from '@/lib/whatsapp-client';
+import { configurationErrorResponse, resolvePhoneNumberContext } from '@/lib/inbox-settings';
+import { whatsappClient } from '@/lib/whatsapp-client';
 
 export async function POST(request: Request) {
   try {
@@ -7,6 +8,8 @@ export async function POST(request: Request) {
     const to = formData.get('to') as string;
     const body = formData.get('body') as string;
     const file = formData.get('file') as File | null;
+    const configuredPhoneNumber = await resolvePhoneNumberContext(formData.get('phoneNumberId') as string | undefined);
+    const phoneNumberId = configuredPhoneNumber.phone_number_id;
 
     if (!to) {
       return NextResponse.json(
@@ -24,7 +27,7 @@ export async function POST(request: Request) {
 
       // Upload media first
       const uploadResult = await whatsappClient.media.upload({
-        phoneNumberId: PHONE_NUMBER_ID,
+        phoneNumberId,
         type: mediaType as 'image' | 'video' | 'audio' | 'document',
         file: file,
         fileName: file.name
@@ -33,25 +36,25 @@ export async function POST(request: Request) {
       // Send message with media
       if (mediaType === 'image') {
         result = await whatsappClient.messages.sendImage({
-          phoneNumberId: PHONE_NUMBER_ID,
+          phoneNumberId,
           to,
           image: { id: uploadResult.id, caption: body || undefined }
         });
       } else if (mediaType === 'video') {
         result = await whatsappClient.messages.sendVideo({
-          phoneNumberId: PHONE_NUMBER_ID,
+          phoneNumberId,
           to,
           video: { id: uploadResult.id, caption: body || undefined }
         });
       } else if (mediaType === 'audio') {
         result = await whatsappClient.messages.sendAudio({
-          phoneNumberId: PHONE_NUMBER_ID,
+          phoneNumberId,
           to,
           audio: { id: uploadResult.id }
         });
       } else {
         result = await whatsappClient.messages.sendDocument({
-          phoneNumberId: PHONE_NUMBER_ID,
+          phoneNumberId,
           to,
           document: { id: uploadResult.id, caption: body || undefined, filename: file.name }
         });
@@ -59,7 +62,7 @@ export async function POST(request: Request) {
     } else if (body) {
       // Send text message
       result = await whatsappClient.messages.sendText({
-        phoneNumberId: PHONE_NUMBER_ID,
+        phoneNumberId,
         to,
         body
       });
@@ -73,9 +76,6 @@ export async function POST(request: Request) {
     return NextResponse.json(result);
   } catch (error) {
     console.error('Error sending message:', error);
-    return NextResponse.json(
-      { error: 'Failed to send message' },
-      { status: 500 }
-    );
+    return configurationErrorResponse(error);
   }
 }

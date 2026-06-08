@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { differenceInDays, differenceInHours, differenceInMinutes, format, isValid, isYesterday } from 'date-fns';
-import { BellOff, Check, ChevronDown, Plus, RefreshCw, Search } from 'lucide-react';
+import { BellOff, Check, ChevronDown, Plus, RefreshCw, Search, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   CONVERSATIONS_QUERY_KEY,
@@ -226,6 +227,18 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
                 <BellOff className="size-4" />
               )}
             </Button>
+            <Button
+              asChild
+              variant="ghost"
+              size="icon"
+              className="size-8 rounded-md text-muted-foreground hover:bg-[var(--chat-icon-hover)] hover:text-foreground"
+              aria-label="Inbox settings"
+              title="Inbox settings"
+            >
+              <Link href="/settings">
+                <Settings className="size-4" />
+              </Link>
+            </Button>
             <ThemeToggle className="size-8 rounded-md text-muted-foreground md:size-8" />
           </div>
         </div>
@@ -376,6 +389,8 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
                       )}
                       <p className="truncate text-[11px] leading-4 text-muted-foreground/80">
                         {thread.phoneNumber}
+                        {(thread.inboxDisplayName || thread.inboxPhoneNumber) &&
+                          ` · via ${thread.inboxDisplayName || thread.inboxPhoneNumber}`}
                         {thread.conversationCount > 1 && ` · ${thread.conversationCount} conversations`}
                       </p>
                     </div>

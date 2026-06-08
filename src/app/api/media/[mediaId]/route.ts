@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { whatsappClient, PHONE_NUMBER_ID } from '@/lib/whatsapp-client';
+import { configurationErrorResponse, resolvePhoneNumberContext } from '@/lib/inbox-settings';
+import { whatsappClient } from '@/lib/whatsapp-client';
 
 export async function GET(
   request: Request,
@@ -7,15 +8,19 @@ export async function GET(
 ) {
   const { mediaId } = await params;
   try {
+    const { searchParams } = new URL(request.url);
+    const configuredPhoneNumber = await resolvePhoneNumberContext(searchParams.get('phoneNumberId') ?? undefined);
+    const phoneNumberId = configuredPhoneNumber.phone_number_id;
+
     // Get metadata for mime type
     const metadata = await whatsappClient.media.get({
       mediaId,
-      phoneNumberId: PHONE_NUMBER_ID
+      phoneNumberId
     });
 
     const buffer = await whatsappClient.media.download({
       mediaId,
-      phoneNumberId: PHONE_NUMBER_ID,
+      phoneNumberId,
       auth: 'never' // Force no auth headers for CDN
     });
 
@@ -31,13 +36,7 @@ export async function GET(
       }
     });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error: 'Failed to fetch media',
-        details: error instanceof Error ? error.message : 'Unknown error',
-        mediaId
-      },
-      { status: 500 }
-    );
+    console.error('Error fetching media:', error);
+    return configurationErrorResponse(error);
   }
 }

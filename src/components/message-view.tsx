@@ -178,13 +178,55 @@ function getDisabledInputMessage(messages: Message[]): string {
 
 const MESSAGE_SKELETON_WIDTHS = [280, 180, 320, 210, 260, 170];
 
+function extractTranscriptDisplayContent(content: string): string | undefined {
+  const match = content.match(/\bTranscript:\s*[\s\S]*$/i);
+  if (!match) return undefined;
+
+  return match[0]
+    .replace(/\s+\bURL:\s*https?:\/\/\S+[\s\S]*$/i, '')
+    .trim();
+}
+
+function isGeneratedAttachmentDisplayContent(content: string): boolean {
+  return (
+    /^https?:\/\//i.test(content) ||
+    /\bURL:\s*https?:\/\//i.test(content) ||
+    /^(image|audio)\s+attached\b/i.test(content)
+  );
+}
+
+function getDisplayMessageContent(message: Message): string | null {
+  if (!message.content || message.content === "[Image attached]") {
+    return null;
+  }
+
+  const trimmedContent = message.content.trim();
+
+  if (message.messageType === 'audio') {
+    return extractTranscriptDisplayContent(trimmedContent) ??
+      (isGeneratedAttachmentDisplayContent(trimmedContent) ? null : trimmedContent);
+  }
+
+  if (
+    message.messageType === 'image' &&
+    isGeneratedAttachmentDisplayContent(trimmedContent)
+  ) {
+    return null;
+  }
+
+  return trimmedContent;
+}
+
 type Props = {
   conversationId?: string;
   conversations?: Conversation[];
   phoneNumber?: string;
+  phoneNumberId?: string;
+  inboxPhoneNumber?: string;
+  inboxDisplayName?: string;
   contactName?: string;
   lastActiveAt?: string;
-  onTemplateSent?: (phoneNumber: string) => Promise<void>;
+  onTemplateSent?: (phoneNumber: string, phoneNumberId?: string) => Promise<void>;
   onBack?: () => void;
   isVisible?: boolean;
 };
@@ -193,6 +235,9 @@ export function MessageView({
   conversationId,
   conversations = [],
   phoneNumber,
+  phoneNumberId,
+  inboxPhoneNumber,
+  inboxDisplayName,
   contactName,
   lastActiveAt,
   onTemplateSent,
@@ -215,6 +260,7 @@ export function MessageView({
   const queryClient = useQueryClient();
   const lastSeenText = formatLastSeen(lastActiveAt);
   const displayPhoneNumber = formatDisplayPhoneNumber(phoneNumber);
+  const displayInboxPhoneNumber = formatDisplayPhoneNumber(inboxPhoneNumber);
   const threadConversationIds = useMemo(() => {
     const conversationIds = conversations.map(
       (conversation) => conversation.id,
@@ -226,8 +272,8 @@ export function MessageView({
         : [];
   }, [conversationId, conversations]);
   const threadMessagesQueryKey = useMemo(
-    () => phoneThreadMessagesQueryKey(phoneNumber, threadConversationIds),
-    [phoneNumber, threadConversationIds],
+    () => phoneThreadMessagesQueryKey(phoneNumberId, phoneNumber, threadConversationIds),
+    [phoneNumberId, phoneNumber, threadConversationIds],
   );
   const threadKey = threadConversationIds.join(":");
   const initialScrollKey = `${conversationId ?? ""}:${threadKey}`;
@@ -278,7 +324,7 @@ export function MessageView({
     const latestConversationId = threadConversationIds[0];
     const messageBatches = await Promise.all(
       threadConversationIds.map((threadConversationId) => {
-        const queryKey = conversationMessagesQueryKey(threadConversationId);
+        const queryKey = conversationMessagesQueryKey(phoneNumberId, threadConversationId);
         const cachedMessages = queryClient.getQueryData<Message[]>(queryKey);
 
         if (cachedMessages && threadConversationId !== latestConversationId) {
@@ -287,14 +333,14 @@ export function MessageView({
 
         return queryClient.fetchQuery({
           queryKey,
-          queryFn: () => fetchConversationMessages(threadConversationId),
+          queryFn: () => fetchConversationMessages(threadConversationId, phoneNumberId),
           staleTime: 0,
         });
       }),
     );
 
     return normalizeMessages(messageBatches.flat());
-  }, [queryClient, threadConversationIds]);
+  }, [phoneNumberId, queryClient, threadConversationIds]);
 
   const { data: messages = [], isPending: loading } = useQuery({
     queryKey: threadMessagesQueryKey,
@@ -310,8 +356,8 @@ export function MessageView({
     const messageBatches = await Promise.all(
       threadConversationIds.map((threadConversationId) =>
         queryClient.fetchQuery({
-          queryKey: conversationMessagesQueryKey(threadConversationId),
-          queryFn: () => fetchConversationMessages(threadConversationId),
+          queryKey: conversationMessagesQueryKey(phoneNumberId, threadConversationId),
+          queryFn: () => fetchConversationMessages(threadConversationId, phoneNumberId),
           staleTime: 0,
         }),
       ),
@@ -321,7 +367,7 @@ export function MessageView({
       threadMessagesQueryKey,
       normalizeMessages(messageBatches.flat()),
     );
-  }, [queryClient, threadConversationIds, threadMessagesQueryKey]);
+  }, [phoneNumberId, queryClient, threadConversationIds, threadMessagesQueryKey]);
 
   useEffect(() => {
     if (isNearBottom) {
@@ -467,6 +513,9 @@ export function MessageView({
     try {
       const formData = new FormData();
       formData.append("to", phoneNumber);
+      if (phoneNumberId) {
+        formData.append("phoneNumberId", phoneNumberId);
+      }
       if (messageInput.trim()) {
         formData.append("body", messageInput);
       }
@@ -496,7 +545,7 @@ export function MessageView({
     await refreshCurrentThread();
 
     if (phoneNumber && onTemplateSent) {
-      await onTemplateSent(phoneNumber);
+      await onTemplateSent(phoneNumber, phoneNumberId);
     }
   };
 
@@ -610,6 +659,12 @@ export function MessageView({
                     : displayPhoneNumber}
                 </p>
               )}
+              {(inboxDisplayName || displayInboxPhoneNumber) && (
+                <p className="truncate text-[11px] text-muted-foreground/80">
+                  via {inboxDisplayName || displayInboxPhoneNumber}
+                  {inboxDisplayName && displayInboxPhoneNumber ? ` · ${displayInboxPhoneNumber}` : ''}
+                </p>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -651,6 +706,7 @@ export function MessageView({
                 message,
                 prevMessage,
               );
+              const displayMessageContent = getDisplayMessageContent(message);
 
               return (
                 <div
@@ -751,6 +807,7 @@ export function MessageView({
                         <div className="mb-2">
                           <MediaMessage
                             mediaId={message.metadata.mediaId}
+                            phoneNumberId={message.phoneNumberId || phoneNumberId}
                             messageType={message.messageType}
                             caption={message.caption}
                             filename={message.filename}
@@ -765,23 +822,16 @@ export function MessageView({
                         </p>
                       )}
 
-                      {message.content &&
-                        message.content !== "[Image attached]" && (
-                          <p className="text-sm break-words whitespace-pre-wrap">
-                            {message.content}
-                          </p>
-                        )}
+                      {displayMessageContent && (
+                        <p className="text-sm break-words whitespace-pre-wrap">
+                          {displayMessageContent}
+                        </p>
+                      )}
 
                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
                         <span className="text-[11px] tabular-nums text-muted-foreground">
                           {formatMessageTime(message.createdAt)}
                         </span>
-
-                        {message.messageType && (
-                          <span className="text-[11px] text-muted-foreground opacity-60">
-                            &middot; {message.messageType}
-                          </span>
-                        )}
 
                         {message.direction === "outbound" && message.status && (
                           <>
@@ -939,6 +989,7 @@ export function MessageView({
         open={showTemplateDialog}
         onOpenChange={setShowTemplateDialog}
         phoneNumber={phoneNumber || ""}
+        phoneNumberId={phoneNumberId}
         onTemplateSent={handleTemplateSent}
       />
 
@@ -947,6 +998,7 @@ export function MessageView({
         onOpenChange={setShowInteractiveDialog}
         conversationId={conversationId}
         phoneNumber={phoneNumber}
+        phoneNumberId={phoneNumberId}
         onMessageSent={async () => {
           await queryClient.invalidateQueries({
             queryKey: CONVERSATIONS_QUERY_KEY,

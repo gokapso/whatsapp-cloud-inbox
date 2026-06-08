@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Send, Loader2 } from 'lucide-react';
 import {
   Dialog,
@@ -21,10 +21,11 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   phoneNumber: string;
+  phoneNumberId?: string;
   onTemplateSent?: () => void;
 };
 
-export function TemplateSelectorDialog({ open, onOpenChange, phoneNumber, onTemplateSent }: Props) {
+export function TemplateSelectorDialog({ open, onOpenChange, phoneNumber, phoneNumberId, onTemplateSent }: Props) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState<string | null>(null);
@@ -35,17 +36,16 @@ export function TemplateSelectorDialog({ open, onOpenChange, phoneNumber, onTemp
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [parameterInfo, setParameterInfo] = useState<TemplateParameterInfo | null>(null);
 
-  useEffect(() => {
-    if (open) {
-      fetchTemplates();
-    }
-  }, [open]);
-
-  const fetchTemplates = async () => {
+  const fetchTemplates = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/templates');
+      const params = new URLSearchParams();
+      if (phoneNumberId) {
+        params.set('phoneNumberId', phoneNumberId);
+      }
+
+      const response = await fetch(`/api/templates${params.size ? `?${params.toString()}` : ''}`);
       const data = await response.json();
 
       if (!response.ok) {
@@ -63,7 +63,13 @@ export function TemplateSelectorDialog({ open, onOpenChange, phoneNumber, onTemp
     } finally {
       setLoading(false);
     }
-  };
+  }, [phoneNumberId]);
+
+  useEffect(() => {
+    if (open) {
+      fetchTemplates();
+    }
+  }, [fetchTemplates, open]);
 
   const handleSelectTemplate = (template: Template) => {
     const params = getTemplateParameters(template);
@@ -89,6 +95,7 @@ export function TemplateSelectorDialog({ open, onOpenChange, phoneNumber, onTemp
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to: phoneNumber,
+          phoneNumberId,
           templateName: template.name,
           languageCode: template.language
         })
@@ -222,6 +229,7 @@ export function TemplateSelectorDialog({ open, onOpenChange, phoneNumber, onTemp
         template={selectedTemplate}
         parameterInfo={parameterInfo}
         phoneNumber={phoneNumber}
+        phoneNumberId={phoneNumberId}
         onBack={handleBackToTemplateSelector}
         onTemplateSent={handleTemplateWithParametersSent}
       />

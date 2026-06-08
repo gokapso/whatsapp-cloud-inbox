@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
+import { configurationErrorResponse, resolvePhoneNumberContext } from '@/lib/inbox-settings';
 import { whatsappClient } from '@/lib/whatsapp-client';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const wabaId = process.env.WABA_ID;
+    const { searchParams } = new URL(request.url);
+    const phoneNumber = await resolvePhoneNumberContext(searchParams.get('phoneNumberId') ?? undefined);
+    const wabaId = phoneNumber.business_account_id || process.env.WABA_ID;
 
     if (!wabaId) {
       return NextResponse.json(
@@ -23,9 +26,6 @@ export async function GET() {
     });
   } catch (error) {
     console.error('Error fetching templates:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch templates' },
-      { status: 500 }
-    );
+    return configurationErrorResponse(error);
   }
 }
