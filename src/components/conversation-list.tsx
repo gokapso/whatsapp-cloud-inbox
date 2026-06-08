@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { differenceInDays, differenceInHours, differenceInMinutes, format, isValid, isYesterday } from 'date-fns';
-import { BellOff, Check, ChevronDown, Plus, RefreshCw, Search, Settings } from 'lucide-react';
+import { Bell, BellOff, Check, ChevronDown, Plus, RefreshCw, Search, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   CONVERSATIONS_QUERY_KEY,
@@ -78,6 +78,61 @@ const FILTER_MENU_ITEMS = [
   { label: 'Handoff', disabled: true },
 ] as const;
 
+const NOTIFICATIONS_STORAGE_KEY = 'whatsapp-cloud-inbox-notifications-enabled';
+
+type NotificationPermissionState = NotificationPermission | 'unsupported';
+
+type ThreadNotificationSnapshot = {
+  lastActiveAt?: string;
+  messagesCount?: number;
+  lastMessageContent?: string;
+  lastMessageDirection?: string;
+};
+
+function parseTimestamp(timestamp?: string): number {
+  if (!timestamp) return 0;
+  const time = Date.parse(timestamp);
+  return Number.isFinite(time) ? time : 0;
+}
+
+function getThreadNotificationSnapshot(thread: ConversationThread): ThreadNotificationSnapshot {
+  return {
+    lastActiveAt: thread.lastActiveAt,
+    messagesCount: thread.latestConversation.messagesCount,
+    lastMessageContent: thread.lastMessage?.content,
+    lastMessageDirection: thread.lastMessage?.direction,
+  };
+}
+
+function shouldNotifyForThread(
+  thread: ConversationThread,
+  previousSnapshot: ThreadNotificationSnapshot | undefined,
+): boolean {
+  if (thread.lastMessage?.direction !== 'inbound') return false;
+  if (!previousSnapshot) return true;
+
+  const currentSnapshot = getThreadNotificationSnapshot(thread);
+  const currentCount = currentSnapshot.messagesCount;
+  const previousCount = previousSnapshot.messagesCount;
+
+  if (
+    typeof currentCount === 'number' &&
+    typeof previousCount === 'number' &&
+    currentCount > previousCount
+  ) {
+    return true;
+  }
+
+  if (parseTimestamp(currentSnapshot.lastActiveAt) > parseTimestamp(previousSnapshot.lastActiveAt)) {
+    return true;
+  }
+
+  return (
+    currentSnapshot.lastMessageContent !== previousSnapshot.lastMessageContent ||
+    currentSnapshot.lastMessageDirection !== previousSnapshot.lastMessageDirection
+  );
+}
+
 type Props = {
   onSelectThread: (thread: ConversationThread) => void;
   selectedThreadKey?: string;
@@ -90,8 +145,12 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
   const [refreshing, setRefreshing] = useState(false);
   const [isStatusMenuOpen, setIsStatusMenuOpen] = useState(false);
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermissionState>('default');
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const controlsRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const previousThreadSnapshotsRef = useRef<Map<string, ThreadNotificationSnapshot>>(new Map());
+  const hasInitializedNotificationSnapshotsRef = useRef(false);
 
   const {
     data: conversations = [],
@@ -129,6 +188,103 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
     }
   };
 
+  const persistNotificationsEnabled = (enabled: boolean) => {
+    setNotificationsEnabled(enabled);
+
+    try {
+      window.localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, String(enabled));
+    } catch {
+      // Notifications still work for this session even when storage is unavailable.
+    }
+  };
+
+  const handleNotificationsClick = async () => {
+    if (!('Notification' in window)) {
+      setNotificationPermission('unsupported');
+      persistNotificationsEnabled(false);
+      return;
+    }
+
+    if (notificationPermission === 'unsupported') return;
+
+    if (Notification.permission === 'granted') {
+      persistNotificationsEnabled(!notificationsEnabled);
+      setNotificationPermission('granted');
+      return;
+    }
+
+    if (Notification.permission === 'denied') {
+      setNotificationPermission('denied');
+      persistNotificationsEnabled(false);
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+    setNotificationPermission(permission);
+    persistNotificationsEnabled(permission === 'granted');
+  };
+
+  useEffect(() => {
+    if (!('Notification' in window)) {
+      setNotificationPermission('unsupported');
+      setNotificationsEnabled(false);
+      return;
+    }
+
+    setNotificationPermission(Notification.permission);
+
+    try {
+      setNotificationsEnabled(
+        window.localStorage.getItem(NOTIFICATIONS_STORAGE_KEY) === 'true' &&
+        Notification.permission === 'granted',
+      );
+    } catch {
+      setNotificationsEnabled(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const currentSnapshots = new Map(
+      threads.map((thread) => [thread.key, getThreadNotificationSnapshot(thread)]),
+    );
+
+    if (!hasInitializedNotificationSnapshotsRef.current) {
+      previousThreadSnapshotsRef.current = currentSnapshots;
+      hasInitializedNotificationSnapshotsRef.current = true;
+      return;
+    }
+
+    if (notificationsEnabled && notificationPermission === 'granted') {
+      threads.forEach((thread) => {
+        if (
+          document.visibilityState === 'visible' &&
+          selectedThreadKey === thread.key
+        ) {
+          return;
+        }
+
+        if (!shouldNotifyForThread(thread, previousThreadSnapshotsRef.current.get(thread.key))) {
+          return;
+        }
+
+        const title = thread.contactName || thread.phoneNumber || 'New WhatsApp message';
+        const body = thread.lastMessage?.content || 'New message received';
+        const notification = new Notification(title, {
+          body,
+          tag: `whatsapp-inbox:${thread.key}`,
+        });
+
+        notification.onclick = () => {
+          window.focus();
+          onSelectThread(thread);
+          notification.close();
+        };
+      });
+    }
+
+    previousThreadSnapshotsRef.current = currentSnapshots;
+  }, [notificationPermission, notificationsEnabled, onSelectThread, selectedThreadKey, threads]);
+
   useEffect(() => {
     if (!isStatusMenuOpen && !isFilterMenuOpen) return;
 
@@ -156,6 +312,15 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
   }, [isFilterMenuOpen, isStatusMenuOpen]);
 
   const selectedStatusLabel = STATUS_FILTERS.find(filter => filter.value === statusFilter)?.label || 'Active';
+  const notificationsActive = notificationsEnabled && notificationPermission === 'granted';
+  const notificationsButtonTitle =
+    notificationPermission === 'unsupported'
+      ? 'Notifications are not supported'
+      : notificationPermission === 'denied'
+        ? 'Notifications are blocked in browser settings'
+        : notificationsActive
+          ? 'Disable inbox notifications'
+          : 'Enable inbox notifications';
 
   if (isPending) {
     return (
@@ -167,6 +332,7 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
           <div className="mb-3 flex items-center justify-between pt-1">
             <Skeleton className="h-6 w-20" />
             <div className="flex items-center gap-2">
+              <Skeleton className="size-8" />
               <Skeleton className="size-8" />
               <Skeleton className="size-8" />
             </div>
@@ -213,6 +379,26 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
           <div className="flex items-center gap-1.5">
             <Button
               type="button"
+              onClick={handleNotificationsClick}
+              disabled={notificationPermission === 'unsupported' || notificationPermission === 'denied'}
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "size-8 rounded-md text-muted-foreground hover:bg-[var(--chat-icon-hover)] hover:text-foreground",
+                notificationsActive && "text-primary hover:text-primary",
+              )}
+              aria-label={notificationsButtonTitle}
+              aria-pressed={notificationsActive}
+              title={notificationsButtonTitle}
+            >
+              {notificationsActive ? (
+                <Bell className="size-4" />
+              ) : (
+                <BellOff className="size-4" />
+              )}
+            </Button>
+            <Button
+              type="button"
               onClick={handleRefresh}
               disabled={refreshing}
               variant="ghost"
@@ -221,11 +407,7 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
               aria-label="Refresh conversations"
               title="Refresh conversations"
             >
-              {refreshing ? (
-                <RefreshCw className="size-4 animate-spin" />
-              ) : (
-                <BellOff className="size-4" />
-              )}
+              <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
             </Button>
             <Button
               asChild

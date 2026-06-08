@@ -21,6 +21,7 @@ import {
   ListTree,
   ArrowLeft,
   Check,
+  Reply,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -177,6 +178,26 @@ function getDisabledInputMessage(messages: Message[]): string {
 }
 
 const MESSAGE_SKELETON_WIDTHS = [280, 180, 320, 210, 260, 170];
+const LOCAL_REPLY_CONTEXT_STORAGE_KEY = "whatsapp-cloud-inbox-reply-contexts";
+const LOCAL_REPLY_CONTEXT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const MAX_LOCAL_REPLY_CONTEXTS = 200;
+
+type RepliedToMessage = NonNullable<Message["repliedTo"]>;
+
+type LocalReplyContext = {
+  contextMessageId: string;
+  repliedTo: RepliedToMessage;
+  createdAt: number;
+};
+
+type LocalReplyContexts = Record<string, LocalReplyContext>;
+
+type SendMessageResult = {
+  messages?: Array<{ id?: string }>;
+  messageId?: string;
+  id?: string;
+  contextMessageId?: string;
+};
 
 function extractTranscriptDisplayContent(content: string): string | undefined {
   const match = content.match(/\bTranscript:\s*[\s\S]*$/i);
@@ -217,6 +238,55 @@ function getDisplayMessageContent(message: Message): string | null {
   return trimmedContent;
 }
 
+function getReplyPreviewContent(message: Message): string {
+  const content = getDisplayMessageContent(message) || message.caption || message.filename || '';
+  const trimmedContent = content.trim();
+
+  if (trimmedContent) {
+    return trimmedContent.length > 140 ? `${trimmedContent.slice(0, 137)}...` : trimmedContent;
+  }
+
+  if (message.hasMedia && message.messageType) {
+    return `${message.messageType.charAt(0).toUpperCase()}${message.messageType.slice(1)} message`;
+  }
+
+  return 'Message';
+}
+
+function getMessageSenderLabel(
+  message: Pick<Message, 'direction'>,
+  contactName?: string,
+  phoneNumber?: string,
+): string {
+  if (message.direction === 'outbound') return 'you';
+  return contactName || phoneNumber || 'contact';
+}
+
+function extractSentMessageId(result: unknown): string | null {
+  if (!result || typeof result !== "object") return null;
+
+  const sendResult = result as SendMessageResult;
+  const sentMessageId = sendResult.messages?.find((message) => typeof message.id === "string")?.id;
+
+  return sentMessageId ?? sendResult.messageId ?? sendResult.id ?? null;
+}
+
+function pruneLocalReplyContexts(contexts: LocalReplyContexts): LocalReplyContexts {
+  const now = Date.now();
+  const entries = Object.entries(contexts)
+    .filter(([, context]) => (
+      context &&
+      typeof context.contextMessageId === "string" &&
+      context.repliedTo &&
+      typeof context.repliedTo.id === "string" &&
+      now - context.createdAt < LOCAL_REPLY_CONTEXT_MAX_AGE_MS
+    ))
+    .sort(([, a], [, b]) => b.createdAt - a.createdAt)
+    .slice(0, MAX_LOCAL_REPLY_CONTEXTS);
+
+  return Object.fromEntries(entries);
+}
+
 type Props = {
   conversationId?: string;
   conversations?: Conversation[];
@@ -253,10 +323,16 @@ export function MessageView({
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
   const [showInteractiveDialog, setShowInteractiveDialog] = useState(false);
   const [isNearBottom, setIsNearBottom] = useState(true);
+  const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastInitialScrollKeyRef = useRef("");
+  const highlightTimeoutRef = useRef<number | null>(null);
+  const localReplyContextsRef = useRef<LocalReplyContexts>({});
+  const [localReplyContextVersion, setLocalReplyContextVersion] = useState(0);
   const queryClient = useQueryClient();
   const lastSeenText = formatLastSeen(lastActiveAt);
   const displayPhoneNumber = formatDisplayPhoneNumber(phoneNumber);
@@ -318,6 +394,91 @@ export function MessageView({
     scrollToBottom();
   }, [conversationId, getScrollViewport, scrollToBottom]);
 
+  const scrollToMessage = useCallback((messageId: string) => {
+    const viewport = getScrollViewport();
+    if (!viewport) return;
+
+    const targetMessage = Array.from(
+      viewport.querySelectorAll<HTMLElement>("[data-message-id]"),
+    ).find((element) => element.dataset.messageId === messageId);
+
+    if (!targetMessage) return;
+
+    targetMessage.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightedMessageId(messageId);
+
+    if (highlightTimeoutRef.current !== null) {
+      window.clearTimeout(highlightTimeoutRef.current);
+    }
+
+    highlightTimeoutRef.current = window.setTimeout(() => {
+      setHighlightedMessageId(null);
+      highlightTimeoutRef.current = null;
+    }, 2_000);
+  }, [getScrollViewport]);
+
+  const handleReplyToMessage = useCallback((message: Message) => {
+    setReplyingToMessage(message);
+    window.requestAnimationFrame(() => {
+      messageInputRef.current?.focus();
+    });
+  }, []);
+
+  const handleCancelReply = useCallback(() => {
+    setReplyingToMessage(null);
+  }, []);
+
+  const persistLocalReplyContexts = useCallback((contexts: LocalReplyContexts) => {
+    const prunedContexts = pruneLocalReplyContexts(contexts);
+    localReplyContextsRef.current = prunedContexts;
+    setLocalReplyContextVersion((version) => version + 1);
+
+    try {
+      window.localStorage.setItem(
+        LOCAL_REPLY_CONTEXT_STORAGE_KEY,
+        JSON.stringify(prunedContexts),
+      );
+    } catch {
+      // Keeping the in-memory map is enough for the current session.
+    }
+  }, []);
+
+  const rememberLocalReplyContext = useCallback((sentMessageId: string, replyTarget: Message) => {
+    persistLocalReplyContexts({
+      ...localReplyContextsRef.current,
+      [sentMessageId]: {
+        contextMessageId: replyTarget.id,
+        repliedTo: {
+          id: replyTarget.id,
+          conversationId: replyTarget.conversationId,
+          content: getReplyPreviewContent(replyTarget),
+          direction: replyTarget.direction,
+          messageType: replyTarget.messageType,
+          senderName: getMessageSenderLabel(replyTarget, contactName, phoneNumber),
+        },
+        createdAt: Date.now(),
+      },
+    });
+  }, [contactName, persistLocalReplyContexts, phoneNumber]);
+
+  const applyLocalReplyContexts = useCallback((inputMessages: Message[]) => {
+    const localReplyContexts = localReplyContextsRef.current;
+    if (Object.keys(localReplyContexts).length === 0) return inputMessages;
+
+    return inputMessages.map((message) => {
+      if (message.contextMessageId || message.repliedTo) return message;
+
+      const localReplyContext = localReplyContexts[message.id];
+      if (!localReplyContext) return message;
+
+      return {
+        ...message,
+        contextMessageId: localReplyContext.contextMessageId,
+        repliedTo: localReplyContext.repliedTo,
+      };
+    });
+  }, []);
+
   const fetchThreadMessages = useCallback(async () => {
     if (threadConversationIds.length === 0) return [];
 
@@ -339,8 +500,8 @@ export function MessageView({
       }),
     );
 
-    return normalizeMessages(messageBatches.flat());
-  }, [phoneNumberId, queryClient, threadConversationIds]);
+    return applyLocalReplyContexts(normalizeMessages(messageBatches.flat()));
+  }, [applyLocalReplyContexts, phoneNumberId, queryClient, threadConversationIds]);
 
   const { data: messages = [], isPending: loading } = useQuery({
     queryKey: threadMessagesQueryKey,
@@ -349,6 +510,30 @@ export function MessageView({
     refetchInterval: 5_000,
     refetchOnMount: false,
   });
+
+  useEffect(() => {
+    try {
+      const storedContexts = window.localStorage.getItem(LOCAL_REPLY_CONTEXT_STORAGE_KEY);
+      if (!storedContexts) return;
+
+      const parsedContexts = JSON.parse(storedContexts);
+      if (parsedContexts && typeof parsedContexts === "object" && !Array.isArray(parsedContexts)) {
+        persistLocalReplyContexts(parsedContexts as LocalReplyContexts);
+      }
+    } catch {
+      localReplyContextsRef.current = {};
+    }
+  }, [persistLocalReplyContexts]);
+
+  useEffect(() => {
+    const currentMessages = queryClient.getQueryData<Message[]>(threadMessagesQueryKey);
+    if (!currentMessages) return;
+
+    queryClient.setQueryData(
+      threadMessagesQueryKey,
+      applyLocalReplyContexts(currentMessages),
+    );
+  }, [applyLocalReplyContexts, localReplyContextVersion, queryClient, threadMessagesQueryKey]);
 
   const refreshCurrentThread = useCallback(async () => {
     if (threadConversationIds.length === 0) return;
@@ -365,9 +550,9 @@ export function MessageView({
 
     queryClient.setQueryData(
       threadMessagesQueryKey,
-      normalizeMessages(messageBatches.flat()),
+      applyLocalReplyContexts(normalizeMessages(messageBatches.flat())),
     );
-  }, [phoneNumberId, queryClient, threadConversationIds, threadMessagesQueryKey]);
+  }, [applyLocalReplyContexts, phoneNumberId, queryClient, threadConversationIds, threadMessagesQueryKey]);
 
   useEffect(() => {
     if (isNearBottom) {
@@ -443,6 +628,24 @@ export function MessageView({
     setCanSendRegularMessage(isWithin24HourWindow(messages));
   }, [messages]);
 
+  useEffect(() => {
+    setReplyingToMessage(null);
+  }, [threadKey]);
+
+  useEffect(() => {
+    if (!canSendRegularMessage) {
+      setReplyingToMessage(null);
+    }
+  }, [canSendRegularMessage]);
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimeoutRef.current !== null) {
+        window.clearTimeout(highlightTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Track if user is near bottom of scroll
   useEffect(() => {
     const container = messagesContainerRef.current;
@@ -509,12 +712,16 @@ export function MessageView({
     if ((!messageInput.trim() && !selectedFile) || !phoneNumber || sending)
       return;
 
+    const replyTarget = replyingToMessage;
     setSending(true);
     try {
       const formData = new FormData();
       formData.append("to", phoneNumber);
       if (phoneNumberId) {
         formData.append("phoneNumberId", phoneNumberId);
+      }
+      if (replyingToMessage?.id) {
+        formData.append("contextMessageId", replyingToMessage.id);
       }
       if (messageInput.trim()) {
         formData.append("body", messageInput);
@@ -523,12 +730,23 @@ export function MessageView({
         formData.append("file", selectedFile);
       }
 
-      await fetch("/api/messages/send", {
+      const response = await fetch("/api/messages/send", {
         method: "POST",
         body: formData,
       });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Failed to send message");
+      }
+
+      const sentMessageId = extractSentMessageId(data);
+      if (sentMessageId && replyTarget) {
+        rememberLocalReplyContext(sentMessageId, replyTarget);
+      }
 
       setMessageInput("");
+      setReplyingToMessage(null);
       handleRemoveFile();
       await queryClient.invalidateQueries({
         queryKey: CONVERSATIONS_QUERY_KEY,
@@ -707,6 +925,7 @@ export function MessageView({
                 prevMessage,
               );
               const displayMessageContent = getDisplayMessageContent(message);
+              const isHighlighted = highlightedMessageId === message.id;
 
               return (
                 <div
@@ -736,20 +955,54 @@ export function MessageView({
 
                   <div
                     className={cn(
-                      "flex mb-2",
+                      "group flex mb-2 items-start gap-1.5 rounded-lg px-1 py-0.5 transition-colors",
                       message.direction === "outbound"
                         ? "justify-end"
                         : "justify-start",
+                      isHighlighted && "bg-primary/10",
                     )}
                   >
+                    {message.direction === "outbound" && canSendRegularMessage && (
+                      <Button
+                        type="button"
+                        onClick={() => handleReplyToMessage(message)}
+                        variant="ghost"
+                        size="icon"
+                        className="mt-1 size-7 flex-shrink-0 text-muted-foreground opacity-100 hover:bg-[var(--chat-hover)] sm:opacity-0 sm:group-hover:opacity-100"
+                        aria-label="Reply to message"
+                        title="Reply"
+                      >
+                        <Reply className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                     <div
                       className={cn(
-                        "relative max-w-[min(88%,34rem)] rounded-lg px-3 py-2 shadow-sm sm:max-w-[min(78%,38rem)] lg:max-w-[min(70%,42rem)]",
+                        "relative max-w-[min(88%,34rem)] rounded-lg px-3 py-2 shadow-sm transition-shadow sm:max-w-[min(78%,38rem)] lg:max-w-[min(70%,42rem)]",
                         message.direction === "outbound"
                           ? "bg-[var(--chat-bubble-outgoing)] text-foreground rounded-br-none"
                           : "bg-[var(--chat-bubble-incoming)] text-foreground rounded-bl-none",
+                        isHighlighted && "ring-2 ring-primary/35",
                       )}
                     >
+                      {message.repliedTo && (
+                        <button
+                          type="button"
+                          onClick={() => scrollToMessage(message.repliedTo!.id)}
+                          className="mb-2 block w-full rounded border-l-2 border-primary/60 bg-background/45 px-2 py-1.5 text-left hover:bg-background/70"
+                        >
+                          <span className="flex min-w-0 items-center gap-1 text-[11px] font-medium text-primary">
+                            <Reply className="h-3 w-3 flex-shrink-0" />
+                            <span className="truncate">
+                              {message.repliedTo.senderName ||
+                                getMessageSenderLabel(message.repliedTo, contactName, phoneNumber)}
+                            </span>
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                            {message.repliedTo.content}
+                          </span>
+                        </button>
+                      )}
+
                       {message.hasMedia && message.mediaData?.url ? (
                         <div className="mb-2">
                           {message.messageType === "sticker" ? (
@@ -859,6 +1112,19 @@ export function MessageView({
                         </div>
                       )}
                     </div>
+                    {message.direction === "inbound" && canSendRegularMessage && (
+                      <Button
+                        type="button"
+                        onClick={() => handleReplyToMessage(message)}
+                        variant="ghost"
+                        size="icon"
+                        className="mt-1 size-7 flex-shrink-0 text-muted-foreground opacity-100 hover:bg-[var(--chat-hover)] sm:opacity-0 sm:group-hover:opacity-100"
+                        aria-label="Reply to message"
+                        title="Reply"
+                      >
+                        <Reply className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               );
@@ -871,6 +1137,33 @@ export function MessageView({
       <div className="border-t border-[var(--chat-border-strong)] bg-[var(--chat-toolbar)] safe-area-bottom">
         {canSendRegularMessage ? (
           <>
+            {replyingToMessage && (
+              <div className="border-b border-[var(--chat-border-strong)] bg-[var(--chat-surface)] px-3 py-2">
+                <div className="mx-auto flex w-full max-w-[900px] items-center gap-2">
+                  <Reply className="h-4 w-4 flex-shrink-0 text-primary" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-medium text-primary">
+                      Replying to {getMessageSenderLabel(replyingToMessage, contactName, phoneNumber)}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {getReplyPreviewContent(replyingToMessage)}
+                    </p>
+                  </div>
+                  <Button
+                    onClick={handleCancelReply}
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 flex-shrink-0 text-muted-foreground"
+                    aria-label="Cancel reply"
+                    title="Cancel reply"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {selectedFile && (
               <div className="border-b border-[var(--chat-border-strong)] bg-[var(--chat-surface)] p-3">
                 <div className="mx-auto flex w-full max-w-[900px] items-start gap-3">
@@ -943,6 +1236,7 @@ export function MessageView({
                 <ListTree className="h-5 w-5" />
               </Button>
               <Input
+                ref={messageInputRef}
                 type="text"
                 value={messageInput}
                 onChange={(e) => setMessageInput(e.target.value)}

@@ -75,6 +75,31 @@ function extractMediaData(mediaData: MediaData | undefined): Pick<MediaData, 'fi
   };
 }
 
+function readString(value: Record<string, unknown> | undefined, ...keys: string[]): string | undefined {
+  if (!value) return undefined;
+
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+function extractContextMessageId(
+  msg: MetaMessage,
+  kapsoExtensions: KapsoMessageExtensions | undefined,
+  messageTypeData: MessageTypeData | undefined
+): string | undefined {
+  return (
+    (typeof msg.context?.id === 'string' && msg.context.id) ||
+    readString(kapsoExtensions, 'contextMessageId', 'context_message_id') ||
+    readString(messageTypeData, 'contextMessageId', 'context_message_id')
+  );
+}
+
 function isGeneratedMediaAttachmentContent(content: string, mediaUrl?: string): boolean {
   const trimmedContent = content.trim();
   if (!trimmedContent) return false;
@@ -156,6 +181,7 @@ export async function GET(
       const kapsoExtensions = kapso as KapsoMessageExtensions | undefined;
       const messageTypeData = extractMessageTypeData(kapsoExtensions?.messageTypeData);
       const kapsoMediaData = extractMediaData(kapsoExtensions?.mediaData);
+      const contextMessageId = extractContextMessageId(msg, kapsoExtensions, messageTypeData);
 
       const mediaId =
         image?.id ??
@@ -219,6 +245,7 @@ export async function GET(
         reactedToMessageId: typeof reaction?.messageId === 'string'
           ? reaction.messageId
           : messageTypeData?.messageId,
+        contextMessageId,
         filename: document?.filename ?? messageTypeData?.filename ?? kapsoMediaData.filename,
         mimeType: messageTypeData?.mimeType ?? kapsoMediaData.contentType,
         messageType: msg.type,
