@@ -8,6 +8,7 @@ export async function POST(request: Request) {
     const to = formData.get('to') as string;
     const body = formData.get('body') as string;
     const file = formData.get('file') as File | null;
+    const contextMessageId = (formData.get('contextMessageId') as string | null)?.trim() || undefined;
     const configuredPhoneNumber = await resolvePhoneNumberContext(formData.get('phoneNumberId') as string | undefined);
     const phoneNumberId = configuredPhoneNumber.phone_number_id;
 
@@ -38,24 +39,28 @@ export async function POST(request: Request) {
         result = await whatsappClient.messages.sendImage({
           phoneNumberId,
           to,
+          contextMessageId,
           image: { id: uploadResult.id, caption: body || undefined }
         });
       } else if (mediaType === 'video') {
         result = await whatsappClient.messages.sendVideo({
           phoneNumberId,
           to,
+          contextMessageId,
           video: { id: uploadResult.id, caption: body || undefined }
         });
       } else if (mediaType === 'audio') {
         result = await whatsappClient.messages.sendAudio({
           phoneNumberId,
           to,
+          contextMessageId,
           audio: { id: uploadResult.id }
         });
       } else {
         result = await whatsappClient.messages.sendDocument({
           phoneNumberId,
           to,
+          contextMessageId,
           document: { id: uploadResult.id, caption: body || undefined, filename: file.name }
         });
       }
@@ -64,6 +69,7 @@ export async function POST(request: Request) {
       result = await whatsappClient.messages.sendText({
         phoneNumberId,
         to,
+        contextMessageId,
         body
       });
     } else {
@@ -73,7 +79,11 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json(result);
+    return NextResponse.json(
+      typeof result === 'object' && result !== null
+        ? { ...result, contextMessageId }
+        : { result, contextMessageId }
+    );
   } catch (error) {
     console.error('Error sending message:', error);
     return configurationErrorResponse(error);

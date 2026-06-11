@@ -38,6 +38,15 @@ export type Message = {
   } | (MediaData & { url: string });
   reactionEmoji?: string | null;
   reactedToMessageId?: string | null;
+  contextMessageId?: string | null;
+  repliedTo?: {
+    id: string;
+    conversationId: string;
+    content: string;
+    direction: 'inbound' | 'outbound';
+    messageType?: string;
+    senderName?: string;
+  } | null;
   filename?: string | null;
   mimeType?: string | null;
   messageType?: string;
@@ -207,10 +216,26 @@ export function shortConversationId(conversationId?: string): string {
   return conversationId.replace(/-/g, '').slice(0, 8);
 }
 
+function getReplyPreviewContent(message: Message): string {
+  const content = message.caption || message.content || message.filename || '';
+  const trimmedContent = content.trim();
+
+  if (trimmedContent) {
+    return trimmedContent.length > 120 ? `${trimmedContent.slice(0, 117)}...` : trimmedContent;
+  }
+
+  if (message.hasMedia && message.messageType) {
+    return `${message.messageType.charAt(0).toUpperCase()}${message.messageType.slice(1)} message`;
+  }
+
+  return 'Message';
+}
+
 export function normalizeMessages(messages: Message[]): Message[] {
   const reactions = messages.filter(message => message.messageType === 'reaction');
   const regularMessages = messages.filter(message => message.messageType !== 'reaction');
   const reactionMap = new Map<string, string>();
+  const messageMap = new Map(regularMessages.map(message => [message.id, message]));
 
   reactions.forEach((reaction) => {
     if (reaction.reactedToMessageId && reaction.reactionEmoji) {
@@ -221,7 +246,34 @@ export function normalizeMessages(messages: Message[]): Message[] {
   return regularMessages
     .map((message) => {
       const reaction = reactionMap.get(message.id);
-      return reaction ? { ...message, reactionEmoji: reaction } : message;
+      const contextMessageId = message.contextMessageId?.trim();
+      const repliedMessage = contextMessageId ? messageMap.get(contextMessageId) : undefined;
+      const repliedTo = message.repliedTo ?? (
+        repliedMessage
+          ? {
+              id: repliedMessage.id,
+              conversationId: repliedMessage.conversationId,
+              content: getReplyPreviewContent(repliedMessage),
+              direction: repliedMessage.direction,
+              messageType: repliedMessage.messageType,
+              senderName: repliedMessage.direction === 'outbound' ? 'You' : 'Contact',
+            }
+          : contextMessageId
+            ? {
+                id: contextMessageId,
+                conversationId: message.conversationId,
+                content: 'Original message',
+                direction: 'inbound' as const,
+                senderName: 'Contact',
+              }
+            : undefined
+      );
+
+      return {
+        ...message,
+        ...(reaction ? { reactionEmoji: reaction } : {}),
+        ...(repliedTo ? { repliedTo } : {}),
+      };
     })
     .sort((a, b) => parseTimestamp(a.createdAt) - parseTimestamp(b.createdAt));
 }
