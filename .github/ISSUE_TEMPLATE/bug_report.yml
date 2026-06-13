@@ -1,0 +1,167 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the information below to help us resolve the issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear description of what the bug is
+      placeholder: When I do X, Y happens instead of Z
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Detailed steps to reproduce the behavior
+      placeholder: |
+        1. Open the inbox
+        2. Select a conversation
+        3. Try to send a message
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you expected to happen
+      placeholder: I expected the message to be sent successfully
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened (include error messages if any)
+      placeholder: Got error "Failed to send message"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: feature
+    attributes:
+      label: Which feature is affected?
+      description: Select all that apply
+      multiple: true
+      options:
+        - Sending text messages
+        - Sending media (images, videos, audio, documents)
+        - Template messages
+        - Interactive button messages
+        - 24-hour window enforcement
+        - Message delivery status
+        - Read receipts
+        - Conversation list
+        - Message history
+        - UI/Styling
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Check package.json or git commit
+      placeholder: "0.1.0 or commit hash"
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+      description: Run `node --version`
+      placeholder: "v20.10.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      options:
+        - Chrome
+        - Firefox
+        - Safari
+        - Edge
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: browser-version
+    attributes:
+      label: Browser version
+      placeholder: "Chrome 120.0.0"
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - macOS
+        - Windows
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment configuration
+      description: Share relevant environment variables (remove sensitive data)
+      render: shell
+      placeholder: |
+        PHONE_NUMBER_ID=123456789
+        WABA_ID=987654321
+        # API key removed for security
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console output / Error logs
+      description: Include relevant console output or error messages
+      render: shell
+      placeholder: |
+        Error: Failed to send message
+        at sendMessage (api/messages/route.ts:45)
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: If applicable, add screenshots to help explain the problem
+      placeholder: Drag and drop images here
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Any other context that might help
+      placeholder: |
+        - This started happening after...
+        - Works fine with template messages but fails with regular messages
+        - Only happens with specific phone numbers
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I have searched existing issues to avoid duplicates
+          required: true
+        - label: I have tested with the latest version
+          required: true
+        - label: I have included all required information above
+          required: true
