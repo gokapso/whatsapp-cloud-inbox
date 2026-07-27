@@ -22,6 +22,7 @@ import {
   ArrowLeft,
   Check,
   Reply,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -317,6 +318,7 @@ export function MessageView({
   const [refreshing, setRefreshing] = useState(false);
   const [messageInput, setMessageInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [canSendRegularMessage, setCanSendRegularMessage] = useState(true);
@@ -630,6 +632,7 @@ export function MessageView({
 
   useEffect(() => {
     setReplyingToMessage(null);
+    setSendError(null);
   }, [threadKey]);
 
   useEffect(() => {
@@ -713,21 +716,26 @@ export function MessageView({
       return;
 
     const replyTarget = replyingToMessage;
+    const bodyText = messageInput.trim();
+    const fileAttachment = selectedFile;
+
     setSending(true);
+    setSendError(null);
+
     try {
       const formData = new FormData();
       formData.append("to", phoneNumber);
       if (phoneNumberId) {
         formData.append("phoneNumberId", phoneNumberId);
       }
-      if (replyingToMessage?.id) {
-        formData.append("contextMessageId", replyingToMessage.id);
+      if (replyTarget?.id) {
+        formData.append("contextMessageId", replyTarget.id);
       }
-      if (messageInput.trim()) {
+      if (bodyText) {
         formData.append("body", messageInput);
       }
-      if (selectedFile) {
-        formData.append("file", selectedFile);
+      if (fileAttachment) {
+        formData.append("file", fileAttachment);
       }
 
       const response = await fetch("/api/messages/send", {
@@ -740,26 +748,30 @@ export function MessageView({
         throw new Error(data?.error || "Failed to send message");
       }
 
+      setMessageInput("");
+      setReplyingToMessage(null);
+      handleRemoveFile();
+      setIsNearBottom(true);
+
       const sentMessageId = extractSentMessageId(data);
       if (sentMessageId && replyTarget) {
         rememberLocalReplyContext(sentMessageId, replyTarget);
       }
 
-      setMessageInput("");
-      setReplyingToMessage(null);
-      handleRemoveFile();
+      await refreshCurrentThread();
       await queryClient.invalidateQueries({
         queryKey: CONVERSATIONS_QUERY_KEY,
       });
-      await refreshCurrentThread();
     } catch (error) {
       console.error("Error sending message:", error);
+      setSendError(error instanceof Error ? error.message : "Failed to send message");
     } finally {
       setSending(false);
     }
   };
 
   const handleTemplateSent = async () => {
+    setSendError(null);
     await refreshCurrentThread();
 
     if (phoneNumber && onTemplateSent) {
@@ -1200,6 +1212,25 @@ export function MessageView({
               </div>
             )}
 
+            {sendError && (
+              <div className="mx-auto flex w-full max-w-[900px] items-center gap-2 px-2.5 pt-2 sm:px-3">
+                <div className="flex flex-1 items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  <XCircle className="h-4 w-4 flex-shrink-0" />
+                  <span className="flex-1">{sendError}</span>
+                  <Button
+                    type="button"
+                    onClick={() => setSendError(null)}
+                    variant="ghost"
+                    size="icon"
+                    className="size-6 flex-shrink-0 text-destructive hover:bg-destructive/20"
+                    aria-label="Dismiss error"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
             <form
               onSubmit={handleSendMessage}
               className="mx-auto flex w-full max-w-[900px] items-end gap-1.5 px-2.5 py-2 sm:gap-2 sm:p-3"
@@ -1239,7 +1270,10 @@ export function MessageView({
                 ref={messageInputRef}
                 type="text"
                 value={messageInput}
-                onChange={(e) => setMessageInput(e.target.value)}
+                onChange={(e) => {
+                  setMessageInput(e.target.value);
+                  if (sendError) setSendError(null);
+                }}
                 placeholder="Type a message"
                 disabled={sending}
                 aria-label="Message"
@@ -1250,9 +1284,13 @@ export function MessageView({
                 disabled={sending || (!messageInput.trim() && !selectedFile)}
                 size="icon"
                 className="size-11 rounded-full bg-primary hover:bg-[var(--primary-hover)] md:size-10"
-                aria-label="Send message"
+                aria-label={sending ? "Sending message" : "Send message"}
               >
-                <Send className="h-5 w-5" />
+                {sending ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Send className="h-5 w-5" />
+                )}
               </Button>
             </form>
           </>
