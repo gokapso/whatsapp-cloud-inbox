@@ -1,15 +1,20 @@
 import { NextResponse } from 'next/server';
-import { buildTemplateSendPayload } from '@kapso/whatsapp-cloud-api';
-import { whatsappClient, PHONE_NUMBER_ID } from '@/lib/whatsapp-client';
+import { whatsappClient } from '@/lib/whatsapp-client';
 import type { TemplateParameterInfo } from '@/types/whatsapp';
 
-type TemplateSendInput = Parameters<typeof buildTemplateSendPayload>[0];
-type TemplateMessageInput = Parameters<(typeof whatsappClient.messages)['sendTemplate']>[0];
-type TemplatePayload = TemplateMessageInput['template'];
-type TemplateBodyParameter = NonNullable<TemplateSendInput['body']>[number];
-type TemplateHeaderParameter = Extract<NonNullable<TemplateSendInput['header']>, { type: 'text' }>;
-type TemplateButtonParameter = Extract<NonNullable<TemplateSendInput['buttons']>[number], { subType: 'url' }>;
-type ButtonTextParameter = { type: 'text'; text: string; parameter_name?: string };
+// Previous Kapso template helper kept for reference.
+//
+// import { buildTemplateSendPayload } from '@kapso/whatsapp-cloud-api';
+// import { PHONE_NUMBER_ID } from '@/lib/whatsapp-client';
+
+type TemplatePayload = {
+  name: string;
+  language: { code: string };
+  components?: Array<{
+    type: string;
+    parameters?: Array<{ type: 'text'; text: string; parameter_name?: string }>;
+  }>;
+};
 
 export async function POST(request: Request) {
   try {
@@ -23,17 +28,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const templateOptions: TemplateSendInput = {
+    const templatePayload: TemplatePayload = {
       name: templateName,
-      language: languageCode
+      language: {
+        code: languageCode
+      }
     };
 
     if (parameters && parameterInfo) {
       const typedParamInfo = parameterInfo as TemplateParameterInfo;
-
-      const bodyParameters: TemplateBodyParameter[] = [];
-      const buttonParameters: TemplateButtonParameter[] = [];
-      let headerParameter: TemplateHeaderParameter | undefined;
+      const components: NonNullable<TemplatePayload['components']> = [];
 
       const getParameterValue = (paramName: string, index: number) => {
         if (Array.isArray(parameters)) {
@@ -53,64 +57,18 @@ export async function POST(request: Request) {
           return;
         }
 
-        if (paramDef.component === 'HEADER') {
-          if (!headerParameter) {
-            headerParameter = {
-              type: 'text',
-              text: textValue,
-              parameter_name: paramDef.name
-            } as TemplateHeaderParameter;
-          }
-          return;
-        }
-
-        if (paramDef.component === 'BODY') {
-          bodyParameters.push({
-            type: 'text',
-            text: textValue,
-            parameter_name: paramDef.name
-          } as TemplateBodyParameter);
-          return;
-        }
-
-        if (paramDef.component === 'BUTTON' && typeof paramDef.buttonIndex === 'number') {
-          let button = buttonParameters.find((btn) => btn.index === paramDef.buttonIndex);
-          if (!button) {
-            button = {
-              type: 'button',
-              subType: 'url',
-              index: paramDef.buttonIndex,
-              parameters: []
-            } as TemplateButtonParameter;
-            buttonParameters.push(button);
-          }
-
-          button.parameters.push({
-            type: 'text',
-            text: textValue,
-            parameter_name: paramDef.name
-          } as ButtonTextParameter);
-        }
+        components.push({
+          type: paramDef.component.toLowerCase(),
+          parameters: [{ type: 'text', text: textValue, parameter_name: paramDef.name }]
+        });
       });
 
-      if (headerParameter) {
-        templateOptions.header = headerParameter;
-      }
-
-      if (bodyParameters.length > 0) {
-        templateOptions.body = bodyParameters;
-      }
-
-      if (buttonParameters.length > 0) {
-        templateOptions.buttons = buttonParameters;
+      if (components.length > 0) {
+        templatePayload.components = components;
       }
     }
 
-    const templatePayload = buildTemplateSendPayload(templateOptions) as TemplatePayload;
-
-    // Send template message
     const result = await whatsappClient.messages.sendTemplate({
-      phoneNumberId: PHONE_NUMBER_ID,
       to,
       template: templatePayload
     });

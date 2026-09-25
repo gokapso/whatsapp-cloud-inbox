@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { format, isValid, isToday, isYesterday, differenceInHours } from 'date-fns';
-import { RefreshCw, Paperclip, Send, X, AlertCircle, MessageSquare, XCircle, ListTree, ArrowLeft } from 'lucide-react';
+import { format, isValid, isToday, isYesterday } from 'date-fns';
+import { RefreshCw, Paperclip, Send, X, XCircle, ListTree, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MediaMessage } from '@/components/media-message';
 import { TemplateSelectorDialog } from '@/components/template-selector-dialog';
@@ -13,7 +13,6 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import type { MediaData } from '@kapso/whatsapp-cloud-api';
 
 type Message = {
   id: string;
@@ -27,7 +26,7 @@ type Message = {
     url: string;
     contentType?: string;
     filename?: string;
-  } | (MediaData & { url: string });
+  };
   reactionEmoji?: string | null;
   reactedToMessageId?: string | null;
   filename?: string | null;
@@ -80,38 +79,6 @@ function shouldShowDateDivider(currentMsg: Message, prevMsg: Message | null): bo
   }
 }
 
-function isWithin24HourWindow(messages: Message[]): boolean {
-  // Find the last inbound message
-  const inboundMessages = messages.filter(msg => msg.direction === 'inbound');
-
-  if (inboundMessages.length === 0) {
-    // No inbound messages yet - only templates allowed
-    return false;
-  }
-
-  const lastInboundMessage = inboundMessages[inboundMessages.length - 1];
-
-  try {
-    const lastMessageDate = new Date(lastInboundMessage.createdAt);
-    if (!isValid(lastMessageDate)) return false;
-
-    const hoursSinceLastMessage = differenceInHours(new Date(), lastMessageDate);
-    return hoursSinceLastMessage < 24;
-  } catch {
-    return false; // In case of error, only allow templates
-  }
-}
-
-function getDisabledInputMessage(messages: Message[]): string {
-  const inboundMessages = messages.filter(msg => msg.direction === 'inbound');
-
-  if (inboundMessages.length === 0) {
-    return "User hasn't messaged yet. Send a template message or wait for them to reply.";
-  }
-
-  return "Last message was over 24 hours ago. Send a template message or wait for the user to message you.";
-}
-
 type Props = {
   conversationId?: string;
   phoneNumber?: string;
@@ -129,7 +96,6 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
   const [sending, setSending] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
-  const [canSendRegularMessage, setCanSendRegularMessage] = useState(true);
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
   const [showInteractiveDialog, setShowInteractiveDialog] = useState(false);
   const [isNearBottom, setIsNearBottom] = useState(true);
@@ -195,10 +161,6 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
     }
   }, [messages, isNearBottom]);
 
-  useEffect(() => {
-    setCanSendRegularMessage(isWithin24HourWindow(messages));
-  }, [messages]);
-
   // Track if user is near bottom of scroll
   useEffect(() => {
     const container = messagesContainerRef.current;
@@ -261,12 +223,12 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if ((!messageInput.trim() && !selectedFile) || !phoneNumber || sending) return;
+    if ((!messageInput.trim() && !selectedFile) || !conversationId || sending) return;
 
     setSending(true);
     try {
       const formData = new FormData();
-      formData.append('to', phoneNumber);
+      formData.append('to', conversationId);
       if (messageInput.trim()) {
         formData.append('body', messageInput);
       }
@@ -535,105 +497,80 @@ export function MessageView({ conversationId, phoneNumber, contactName, onTempla
       </ScrollArea>
 
       <div className="border-t border-[#d1d7db] bg-[#f0f2f5] safe-area-bottom">
-        {canSendRegularMessage ? (
-          <>
-            {selectedFile && (
-              <div className="p-3 border-b border-[#d1d7db] bg-white">
-                <div className="flex items-start gap-3">
-                  {filePreview ? (
-                    <img src={filePreview} alt="Preview" className="w-16 h-16 object-cover rounded" />
-                  ) : (
-                    <div className="w-16 h-16 bg-[#f0f2f5] rounded flex items-center justify-center">
-                      <Paperclip className="h-6 w-6 text-[#667781]" />
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-[#111b21] truncate">{selectedFile.name}</p>
-                    <p className="text-xs text-[#667781]">{(selectedFile.size / 1024).toFixed(1)} KB</p>
-                  </div>
-                  <Button
-                    onClick={handleRemoveFile}
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="text-[#667781]"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
+        {selectedFile && (
+          <div className="p-3 border-b border-[#d1d7db] bg-white">
+            <div className="flex items-start gap-3">
+              {filePreview ? (
+                <img src={filePreview} alt="Preview" className="w-16 h-16 object-cover rounded" />
+              ) : (
+                <div className="w-16 h-16 bg-[#f0f2f5] rounded flex items-center justify-center">
+                  <Paperclip className="h-6 w-6 text-[#667781]" />
                 </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-[#111b21] truncate">{selectedFile.name}</p>
+                <p className="text-xs text-[#667781]">{(selectedFile.size / 1024).toFixed(1)} KB</p>
               </div>
-            )}
-
-            <form onSubmit={handleSendMessage} className="p-3 max-w-[900px] mx-auto w-full flex gap-2 items-center">
-              <input
-                ref={fileInputRef}
-                type="file"
-                onChange={handleFileSelect}
-                accept="image/*,video/*,audio/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                className="hidden"
-              />
               <Button
+                onClick={handleRemoveFile}
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={sending}
                 variant="ghost"
                 size="icon"
-                className="text-[#667781] hover:bg-[#d1d7db]/30"
-                title="Upload file"
+                className="text-[#667781]"
               >
-                <Paperclip className="h-5 w-5" />
+                <X className="h-4 w-4" />
               </Button>
-              <Button
-                type="button"
-                onClick={() => setShowInteractiveDialog(true)}
-                disabled={sending}
-                size="icon"
-                variant="ghost"
-                className="text-[#667781] hover:text-[#00a884] hover:bg-[#f0f2f5]"
-                title="Send interactive message"
-              >
-                <ListTree className="h-5 w-5" />
-              </Button>
-              <Input
-                type="text"
-                value={messageInput}
-                onChange={(e) => setMessageInput(e.target.value)}
-                placeholder="Type a message"
-                disabled={sending}
-                className="flex-1 bg-white border-[#d1d7db] focus-visible:ring-[#00a884] rounded-lg"
-              />
-              <Button
-                type="submit"
-                disabled={sending || (!messageInput.trim() && !selectedFile)}
-                size="icon"
-                className="bg-[#00a884] hover:bg-[#008f6f] rounded-full"
-              >
-                <Send className="h-5 w-5" />
-              </Button>
-            </form>
-          </>
-        ) : (
-          <div className="p-3 max-w-[900px] mx-auto w-full">
-            <div className="bg-[#fff4cc] border border-[#e9c46a] rounded-lg p-4">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 text-[#8b7000] flex-shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-[#111b21] mb-3">
-                    {getDisabledInputMessage(messages)}
-                  </p>
-                  <Button
-                    onClick={() => setShowTemplateDialog(true)}
-                    className="bg-[#00a884] hover:bg-[#008f6f]"
-                    size="sm"
-                  >
-                    <MessageSquare className="h-4 w-4 mr-2" />
-                    Send template
-                  </Button>
-                </div>
-              </div>
             </div>
           </div>
         )}
+
+        <form onSubmit={handleSendMessage} className="p-3 max-w-[900px] mx-auto w-full flex gap-2 items-center">
+          <input
+            ref={fileInputRef}
+            type="file"
+            onChange={handleFileSelect}
+            accept="image/*,video/*,audio/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            className="hidden"
+          />
+          <Button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sending}
+            variant="ghost"
+            size="icon"
+            className="text-[#667781] hover:bg-[#d1d7db]/30"
+            title="Upload file"
+          >
+            <Paperclip className="h-5 w-5" />
+          </Button>
+          <Button
+            type="button"
+            onClick={() => setShowInteractiveDialog(true)}
+            disabled={sending}
+            size="icon"
+            variant="ghost"
+            className="text-[#667781] hover:text-[#00a884] hover:bg-[#f0f2f5]"
+            title="Send interactive message"
+          >
+            <ListTree className="h-5 w-5" />
+          </Button>
+          <Input
+            type="text"
+            value={messageInput}
+            onChange={(e) => setMessageInput(e.target.value)}
+            placeholder="Type a message"
+            disabled={sending}
+            className="flex-1 bg-white border-[#d1d7db] focus-visible:ring-[#00a884] rounded-lg"
+          />
+          <Button
+            type="submit"
+            disabled={sending || (!messageInput.trim() && !selectedFile)}
+            size="icon"
+            className="bg-[#00a884] hover:bg-[#008f6f] rounded-full"
+          >
+            <Send className="h-5 w-5" />
+          </Button>
+        </form>
       </div>
 
       <TemplateSelectorDialog

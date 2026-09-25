@@ -14,6 +14,23 @@ export default function Home() {
   const [selectedConversation, setSelectedConversation] = useState<Conversation>();
   const conversationListRef = useRef<ConversationListRef>(null);
 
+  const handleSelectConversation = async (conversation: Conversation) => {
+    setSelectedConversation(conversation);
+
+    try {
+      await fetch('/api/conversations/read', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ jid: conversation.id })
+      });
+      await conversationListRef.current?.refresh();
+    } catch (error) {
+      console.error('Error marking conversation as read:', error);
+    }
+  };
+
   const handleTemplateSent = async (phoneNumber: string) => {
     // Refresh the conversation list and get the updated conversations
     const conversations = await conversationListRef.current?.refresh();
@@ -35,7 +52,7 @@ export default function Home() {
     <div className="h-dvh flex">
       <ConversationList
         ref={conversationListRef}
-        onSelectConversation={setSelectedConversation}
+        onSelectConversation={handleSelectConversation}
         selectedConversationId={selectedConversation?.id}
         isHidden={!!selectedConversation}
       />
