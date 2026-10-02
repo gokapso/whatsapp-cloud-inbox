@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   format,
   formatDistanceToNow,
   isValid,
   isToday,
   isYesterday,
-  differenceInHours,
 } from "date-fns";
 import {
   RefreshCw,
@@ -22,18 +21,21 @@ import {
   ArrowLeft,
   Check,
   Reply,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   CONVERSATIONS_QUERY_KEY,
   type Conversation,
   type Message,
-  conversationMessagesQueryKey,
-  fetchConversationMessages,
-  normalizeMessages,
+  getReplyPreviewContent,
   phoneThreadMessagesQueryKey,
   shortConversationId,
 } from "@/lib/inbox-data";
+import { isWithinServiceWindow } from '@/lib/service-window';
+import { useThreadMessages } from '@/hooks/use-thread-messages';
+import { getIdentityLabel, getRecipientAddress } from '@/lib/whatsapp-identity';
+import { getInboxErrorMessage, readInboxResponse } from '@/lib/inbox-errors';
 import { MediaMessage } from "@/components/media-message";
 import { TemplateSelectorDialog } from "@/components/template-selector-dialog";
 import { InteractiveMessageDialog } from "@/components/interactive-message-dialog";
@@ -142,35 +144,10 @@ function shouldShowConversationDivider(
   );
 }
 
-function isWithin24HourWindow(messages: Message[]): boolean {
-  // Find the last inbound message
+function getDisabledInputMessage(messages: Message[], lastInboundAt?: string): string {
   const inboundMessages = messages.filter((msg) => msg.direction === "inbound");
 
-  if (inboundMessages.length === 0) {
-    // No inbound messages yet - only templates allowed
-    return false;
-  }
-
-  const lastInboundMessage = inboundMessages[inboundMessages.length - 1];
-
-  try {
-    const lastMessageDate = new Date(lastInboundMessage.createdAt);
-    if (!isValid(lastMessageDate)) return false;
-
-    const hoursSinceLastMessage = differenceInHours(
-      new Date(),
-      lastMessageDate,
-    );
-    return hoursSinceLastMessage < 24;
-  } catch {
-    return false; // In case of error, only allow templates
-  }
-}
-
-function getDisabledInputMessage(messages: Message[]): string {
-  const inboundMessages = messages.filter((msg) => msg.direction === "inbound");
-
-  if (inboundMessages.length === 0) {
+  if (inboundMessages.length === 0 && !lastInboundAt) {
     return "User hasn't messaged yet. Send a template message or wait for them to reply.";
   }
 
@@ -238,21 +215,6 @@ function getDisplayMessageContent(message: Message): string | null {
   return trimmedContent;
 }
 
-function getReplyPreviewContent(message: Message): string {
-  const content = getDisplayMessageContent(message) || message.caption || message.filename || '';
-  const trimmedContent = content.trim();
-
-  if (trimmedContent) {
-    return trimmedContent.length > 140 ? `${trimmedContent.slice(0, 137)}...` : trimmedContent;
-  }
-
-  if (message.hasMedia && message.messageType) {
-    return `${message.messageType.charAt(0).toUpperCase()}${message.messageType.slice(1)} message`;
-  }
-
-  return 'Message';
-}
-
 function getMessageSenderLabel(
   message: Pick<Message, 'direction'>,
   contactName?: string,
@@ -291,12 +253,16 @@ type Props = {
   conversationId?: string;
   conversations?: Conversation[];
   phoneNumber?: string;
+  businessScopedUserId?: string;
+  parentBusinessScopedUserId?: string;
+  username?: string;
+  lastInboundAt?: string;
   phoneNumberId?: string;
   inboxPhoneNumber?: string;
   inboxDisplayName?: string;
   contactName?: string;
   lastActiveAt?: string;
-  onTemplateSent?: (phoneNumber: string, phoneNumberId?: string) => Promise<void>;
+  onTemplateSent?: () => Promise<void>;
   onBack?: () => void;
   isVisible?: boolean;
 };
@@ -305,6 +271,10 @@ export function MessageView({
   conversationId,
   conversations = [],
   phoneNumber,
+  businessScopedUserId,
+  parentBusinessScopedUserId,
+  username,
+  lastInboundAt,
   phoneNumberId,
   inboxPhoneNumber,
   inboxDisplayName,
@@ -314,12 +284,17 @@ export function MessageView({
   onBack,
   isVisible = false,
 }: Props) {
+  const identity = { phoneNumber, businessScopedUserId, parentBusinessScopedUserId, username, contactName };
+  const recipientAddress = getRecipientAddress(identity);
+  const recipientKey = JSON.stringify(recipientAddress);
+  const contactLabel = getIdentityLabel(identity);
+  const [refreshWarning, setRefreshWarning] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [messageInput, setMessageInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
-  const [canSendRegularMessage, setCanSendRegularMessage] = useState(true);
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
   const [showInteractiveDialog, setShowInteractiveDialog] = useState(false);
   const [isNearBottom, setIsNearBottom] = useState(true);
@@ -331,8 +306,7 @@ export function MessageView({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastInitialScrollKeyRef = useRef("");
   const highlightTimeoutRef = useRef<number | null>(null);
-  const localReplyContextsRef = useRef<LocalReplyContexts>({});
-  const [localReplyContextVersion, setLocalReplyContextVersion] = useState(0);
+  const [localReplyContexts, setLocalReplyContexts] = useState<LocalReplyContexts>({});
   const queryClient = useQueryClient();
   const lastSeenText = formatLastSeen(lastActiveAt);
   const displayPhoneNumber = formatDisplayPhoneNumber(phoneNumber);
@@ -348,8 +322,8 @@ export function MessageView({
         : [];
   }, [conversationId, conversations]);
   const threadMessagesQueryKey = useMemo(
-    () => phoneThreadMessagesQueryKey(phoneNumberId, phoneNumber, threadConversationIds),
-    [phoneNumberId, phoneNumber, threadConversationIds],
+    () => phoneThreadMessagesQueryKey(phoneNumberId, recipientKey, threadConversationIds),
+    [phoneNumberId, recipientKey, threadConversationIds],
   );
   const threadKey = threadConversationIds.join(":");
   const initialScrollKey = `${conversationId ?? ""}:${threadKey}`;
@@ -430,8 +404,7 @@ export function MessageView({
 
   const persistLocalReplyContexts = useCallback((contexts: LocalReplyContexts) => {
     const prunedContexts = pruneLocalReplyContexts(contexts);
-    localReplyContextsRef.current = prunedContexts;
-    setLocalReplyContextVersion((version) => version + 1);
+    setLocalReplyContexts(prunedContexts);
 
     try {
       window.localStorage.setItem(
@@ -445,24 +418,23 @@ export function MessageView({
 
   const rememberLocalReplyContext = useCallback((sentMessageId: string, replyTarget: Message) => {
     persistLocalReplyContexts({
-      ...localReplyContextsRef.current,
+      ...localReplyContexts,
       [sentMessageId]: {
         contextMessageId: replyTarget.id,
         repliedTo: {
           id: replyTarget.id,
           conversationId: replyTarget.conversationId,
-          content: getReplyPreviewContent(replyTarget),
+          content: getReplyPreviewContent(replyTarget, 140, getDisplayMessageContent(replyTarget)),
           direction: replyTarget.direction,
           messageType: replyTarget.messageType,
-          senderName: getMessageSenderLabel(replyTarget, contactName, phoneNumber),
+          senderName: getMessageSenderLabel(replyTarget, contactLabel, phoneNumber),
         },
         createdAt: Date.now(),
       },
     });
-  }, [contactName, persistLocalReplyContexts, phoneNumber]);
+  }, [contactLabel, localReplyContexts, persistLocalReplyContexts, phoneNumber]);
 
   const applyLocalReplyContexts = useCallback((inputMessages: Message[]) => {
-    const localReplyContexts = localReplyContextsRef.current;
     if (Object.keys(localReplyContexts).length === 0) return inputMessages;
 
     return inputMessages.map((message) => {
@@ -477,39 +449,12 @@ export function MessageView({
         repliedTo: localReplyContext.repliedTo,
       };
     });
-  }, []);
+  }, [localReplyContexts]);
 
-  const fetchThreadMessages = useCallback(async () => {
-    if (threadConversationIds.length === 0) return [];
-
-    const latestConversationId = threadConversationIds[0];
-    const messageBatches = await Promise.all(
-      threadConversationIds.map((threadConversationId) => {
-        const queryKey = conversationMessagesQueryKey(phoneNumberId, threadConversationId);
-        const cachedMessages = queryClient.getQueryData<Message[]>(queryKey);
-
-        if (cachedMessages && threadConversationId !== latestConversationId) {
-          return cachedMessages;
-        }
-
-        return queryClient.fetchQuery({
-          queryKey,
-          queryFn: () => fetchConversationMessages(threadConversationId, phoneNumberId),
-          staleTime: 0,
-        });
-      }),
-    );
-
-    return applyLocalReplyContexts(normalizeMessages(messageBatches.flat()));
-  }, [applyLocalReplyContexts, phoneNumberId, queryClient, threadConversationIds]);
-
-  const { data: messages = [], isPending: loading } = useQuery({
-    queryKey: threadMessagesQueryKey,
-    queryFn: fetchThreadMessages,
-    enabled: threadConversationIds.length > 0,
-    refetchInterval: 5_000,
-    refetchOnMount: false,
-  });
+  const { messages: rawMessages, isPending: loading, error: historyError, hasNextPage, fetchNextPage, isFetchingNextPage } =
+    useThreadMessages(threadMessagesQueryKey, threadConversationIds, phoneNumberId);
+  const messages = useMemo(() => applyLocalReplyContexts(rawMessages), [applyLocalReplyContexts, rawMessages]);
+  const canSendRegularMessage = isWithinServiceWindow(messages, lastInboundAt);
 
   useEffect(() => {
     try {
@@ -521,38 +466,13 @@ export function MessageView({
         persistLocalReplyContexts(parsedContexts as LocalReplyContexts);
       }
     } catch {
-      localReplyContextsRef.current = {};
+      setLocalReplyContexts({});
     }
   }, [persistLocalReplyContexts]);
 
-  useEffect(() => {
-    const currentMessages = queryClient.getQueryData<Message[]>(threadMessagesQueryKey);
-    if (!currentMessages) return;
-
-    queryClient.setQueryData(
-      threadMessagesQueryKey,
-      applyLocalReplyContexts(currentMessages),
-    );
-  }, [applyLocalReplyContexts, localReplyContextVersion, queryClient, threadMessagesQueryKey]);
-
   const refreshCurrentThread = useCallback(async () => {
-    if (threadConversationIds.length === 0) return;
-
-    const messageBatches = await Promise.all(
-      threadConversationIds.map((threadConversationId) =>
-        queryClient.fetchQuery({
-          queryKey: conversationMessagesQueryKey(phoneNumberId, threadConversationId),
-          queryFn: () => fetchConversationMessages(threadConversationId, phoneNumberId),
-          staleTime: 0,
-        }),
-      ),
-    );
-
-    queryClient.setQueryData(
-      threadMessagesQueryKey,
-      applyLocalReplyContexts(normalizeMessages(messageBatches.flat())),
-    );
-  }, [applyLocalReplyContexts, phoneNumberId, queryClient, threadConversationIds, threadMessagesQueryKey]);
+    await queryClient.invalidateQueries({ queryKey: threadMessagesQueryKey }, { throwOnError: true });
+  }, [queryClient, threadMessagesQueryKey]);
 
   useEffect(() => {
     if (isNearBottom) {
@@ -625,11 +545,9 @@ export function MessageView({
   ]);
 
   useEffect(() => {
-    setCanSendRegularMessage(isWithin24HourWindow(messages));
-  }, [messages]);
-
-  useEffect(() => {
     setReplyingToMessage(null);
+    setSendError(null);
+    setRefreshWarning(null);
   }, [threadKey]);
 
   useEffect(() => {
@@ -675,6 +593,9 @@ export function MessageView({
     setRefreshing(true);
     try {
       await refreshCurrentThread();
+      setRefreshWarning(null);
+    } catch (error) {
+      setRefreshWarning(getInboxErrorMessage(error, 'Could not refresh messages'));
     } finally {
       setRefreshing(false);
     }
@@ -709,61 +630,72 @@ export function MessageView({
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if ((!messageInput.trim() && !selectedFile) || !phoneNumber || sending)
+    if ((!messageInput.trim() && !selectedFile) || !recipientAddress || sending)
       return;
 
     const replyTarget = replyingToMessage;
+    const bodyText = messageInput.trim();
+    const fileAttachment = selectedFile;
+
     setSending(true);
+    setSendError(null);
+
     try {
       const formData = new FormData();
-      formData.append("to", phoneNumber);
+      for (const [field, value] of Object.entries(recipientAddress)) {
+        formData.append(field, value);
+      }
       if (phoneNumberId) {
         formData.append("phoneNumberId", phoneNumberId);
       }
-      if (replyingToMessage?.id) {
-        formData.append("contextMessageId", replyingToMessage.id);
+      if (replyTarget?.id) {
+        formData.append("contextMessageId", replyTarget.id);
       }
-      if (messageInput.trim()) {
+      if (bodyText) {
         formData.append("body", messageInput);
       }
-      if (selectedFile) {
-        formData.append("file", selectedFile);
+      if (fileAttachment) {
+        formData.append("file", fileAttachment);
       }
 
       const response = await fetch("/api/messages/send", {
         method: "POST",
         body: formData,
       });
-      const data = await response.json().catch(() => null);
+      const data = await readInboxResponse<SendMessageResult>(response);
 
-      if (!response.ok) {
-        throw new Error(data?.error || "Failed to send message");
-      }
+      setMessageInput("");
+      setReplyingToMessage(null);
+      handleRemoveFile();
+      setIsNearBottom(true);
 
       const sentMessageId = extractSentMessageId(data);
       if (sentMessageId && replyTarget) {
         rememberLocalReplyContext(sentMessageId, replyTarget);
       }
 
-      setMessageInput("");
-      setReplyingToMessage(null);
-      handleRemoveFile();
-      await queryClient.invalidateQueries({
-        queryKey: CONVERSATIONS_QUERY_KEY,
-      });
-      await refreshCurrentThread();
+      const refreshResults = await Promise.allSettled([
+        refreshCurrentThread(),
+        queryClient.invalidateQueries({ queryKey: CONVERSATIONS_QUERY_KEY }, { throwOnError: true }),
+      ]);
+      if (refreshResults.some(result => result.status === 'rejected')) {
+        setRefreshWarning('Message sent. History could not be refreshed; refresh to see the latest messages.');
+      }
     } catch (error) {
       console.error("Error sending message:", error);
+      setSendError(getInboxErrorMessage(error, "Failed to send message"));
     } finally {
       setSending(false);
     }
   };
 
   const handleTemplateSent = async () => {
-    await refreshCurrentThread();
-
-    if (phoneNumber && onTemplateSent) {
-      await onTemplateSent(phoneNumber, phoneNumberId);
+    setSendError(null);
+    try {
+      await refreshCurrentThread();
+      await onTemplateSent?.();
+    } catch {
+      setRefreshWarning('Template sent. History could not be refreshed; refresh to see the latest messages.');
     }
   };
 
@@ -868,7 +800,7 @@ export function MessageView({
             )}
             <div className="flex-1 min-w-0">
               <h2 className="truncate text-sm font-medium text-foreground sm:text-base">
-                {contactName || phoneNumber || "Conversation"}
+                {contactLabel}
               </h2>
               {displayPhoneNumber && (
                 <p className="truncate text-xs text-muted-foreground">
@@ -909,6 +841,24 @@ export function MessageView({
         className="h-0 flex-1 overscroll-contain p-3 sm:p-4 lg:p-6"
       >
         <div className="mx-auto w-full max-w-[900px]">
+          {historyError && <p role="alert" className="mb-3 text-sm text-destructive">{getInboxErrorMessage(historyError, 'Could not load messages')}</p>}
+          {refreshWarning && <p role="status" className="mb-3 text-sm text-muted-foreground">{refreshWarning}</p>}
+          {hasNextPage && (
+            <div className="mb-4 text-center">
+              <Button variant="outline" disabled={isFetchingNextPage} onClick={async () => {
+                setIsNearBottom(false);
+                const viewport = getScrollViewport();
+                const height = viewport?.scrollHeight ?? 0;
+                const top = viewport?.scrollTop ?? 0;
+                await fetchNextPage();
+                window.requestAnimationFrame(() => {
+                  if (viewport) viewport.scrollTop = top + viewport.scrollHeight - height;
+                });
+              }}>
+                {isFetchingNextPage ? 'Loading history…' : 'Load older messages'}
+              </Button>
+            </div>
+          )}
           {messages.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               No messages yet
@@ -994,7 +944,7 @@ export function MessageView({
                             <Reply className="h-3 w-3 flex-shrink-0" />
                             <span className="truncate">
                               {message.repliedTo.senderName ||
-                                getMessageSenderLabel(message.repliedTo, contactName, phoneNumber)}
+                                getMessageSenderLabel(message.repliedTo, contactLabel, phoneNumber)}
                             </span>
                           </span>
                           <span className="mt-0.5 block truncate text-xs text-muted-foreground">
@@ -1081,6 +1031,12 @@ export function MessageView({
                         </p>
                       )}
 
+                      {(message.origin === 'meta_business_agent' || message.origin === 'other_app' || message.passive) && (
+                        <div className="mt-1 flex gap-2 text-[11px] text-muted-foreground">
+                          {message.origin === 'meta_business_agent' ? 'Meta agent' : message.origin === 'other_app' ? 'Other app' : null}
+                          {message.passive && <span title="A copy received while another application held control">Standby copy</span>}
+                        </div>
+                      )}
                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
                         <span className="text-[11px] tabular-nums text-muted-foreground">
                           {formatMessageTime(message.createdAt)}
@@ -1101,8 +1057,9 @@ export function MessageView({
                         message.status === "failed" && (
                           <div className="mt-1">
                             <span className="text-[11px] text-red-500 flex items-center gap-1">
-                              Not delivered
+                              Not delivered{message.deliveryError?.code ? ` (${message.deliveryError.code})` : ''}
                             </span>
+                            {message.deliveryError && <p className="mt-1 text-xs text-destructive">{message.deliveryError.details || message.deliveryError.message || message.deliveryError.title}</p>}
                           </div>
                         )}
 
@@ -1135,6 +1092,24 @@ export function MessageView({
       </ScrollArea>
 
       <div className="border-t border-[var(--chat-border-strong)] bg-[var(--chat-toolbar)] safe-area-bottom">
+        {sendError && (
+          <div className="mx-auto flex w-full max-w-[900px] items-center gap-2 px-2.5 pt-2 sm:px-3">
+            <div role="alert" className="flex flex-1 items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <XCircle className="h-4 w-4 flex-shrink-0" />
+              <span className="flex-1">{sendError}</span>
+              <Button
+                type="button"
+                onClick={() => setSendError(null)}
+                variant="ghost"
+                size="icon"
+                className="size-6 flex-shrink-0 text-destructive hover:bg-destructive/20"
+                aria-label="Dismiss error"
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          </div>
+        )}
         {canSendRegularMessage ? (
           <>
             {replyingToMessage && (
@@ -1143,10 +1118,10 @@ export function MessageView({
                   <Reply className="h-4 w-4 flex-shrink-0 text-primary" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-xs font-medium text-primary">
-                      Replying to {getMessageSenderLabel(replyingToMessage, contactName, phoneNumber)}
+                      Replying to {getMessageSenderLabel(replyingToMessage, contactLabel, phoneNumber)}
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {getReplyPreviewContent(replyingToMessage)}
+                      {getReplyPreviewContent(replyingToMessage, 140, getDisplayMessageContent(replyingToMessage))}
                     </p>
                   </div>
                   <Button
@@ -1200,6 +1175,8 @@ export function MessageView({
               </div>
             )}
 
+
+
             <form
               onSubmit={handleSendMessage}
               className="mx-auto flex w-full max-w-[900px] items-end gap-1.5 px-2.5 py-2 sm:gap-2 sm:p-3"
@@ -1239,7 +1216,10 @@ export function MessageView({
                 ref={messageInputRef}
                 type="text"
                 value={messageInput}
-                onChange={(e) => setMessageInput(e.target.value)}
+                onChange={(e) => {
+                  setMessageInput(e.target.value);
+                  if (sendError) setSendError(null);
+                }}
                 placeholder="Type a message"
                 disabled={sending}
                 aria-label="Message"
@@ -1247,12 +1227,16 @@ export function MessageView({
               />
               <Button
                 type="submit"
-                disabled={sending || (!messageInput.trim() && !selectedFile)}
+                disabled={sending || !recipientAddress || (!messageInput.trim() && !selectedFile)}
                 size="icon"
                 className="size-11 rounded-full bg-primary hover:bg-[var(--primary-hover)] md:size-10"
-                aria-label="Send message"
+                aria-label={sending ? "Sending message" : "Send message"}
               >
-                <Send className="h-5 w-5" />
+                {sending ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Send className="h-5 w-5" />
+                )}
               </Button>
             </form>
           </>
@@ -1263,7 +1247,7 @@ export function MessageView({
                 <AlertCircle className="h-5 w-5 text-[var(--chat-warning-foreground)] flex-shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-foreground mb-3">
-                    {getDisabledInputMessage(messages)}
+                    {getDisabledInputMessage(messages, lastInboundAt)}
                   </p>
                   <Button
                     onClick={() => setShowTemplateDialog(true)}
@@ -1282,7 +1266,7 @@ export function MessageView({
       <TemplateSelectorDialog
         open={showTemplateDialog}
         onOpenChange={setShowTemplateDialog}
-        phoneNumber={phoneNumber || ""}
+        identity={identity}
         phoneNumberId={phoneNumberId}
         onTemplateSent={handleTemplateSent}
       />
@@ -1291,13 +1275,15 @@ export function MessageView({
         open={showInteractiveDialog}
         onOpenChange={setShowInteractiveDialog}
         conversationId={conversationId}
-        phoneNumber={phoneNumber}
+        identity={identity}
         phoneNumberId={phoneNumberId}
         onMessageSent={async () => {
-          await queryClient.invalidateQueries({
-            queryKey: CONVERSATIONS_QUERY_KEY,
-          });
-          await refreshCurrentThread();
+          try {
+            await queryClient.invalidateQueries({ queryKey: CONVERSATIONS_QUERY_KEY });
+            await refreshCurrentThread();
+          } catch {
+            setRefreshWarning('Interactive message sent. Refresh to see the latest history.');
+          }
         }}
       />
     </div>

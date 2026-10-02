@@ -1,3 +1,4 @@
+import { inboxErrorResponse } from './inbox-server-errors';
 import { cookies } from 'next/headers';
 import type { InboxSettings, KapsoPhoneNumber } from '@/types/settings';
 
@@ -263,11 +264,5 @@ export async function resolvePhoneNumberContext(phoneNumberId?: string): Promise
 }
 
 export function configurationErrorResponse(error: unknown): Response {
-  const status = error instanceof InboxConfigurationError ? error.status : 500;
-  const message = error instanceof Error ? error.message : 'Inbox configuration error';
-
-  return Response.json(
-    { error: message },
-    { status }
-  );
+  return inboxErrorResponse(error, error instanceof InboxConfigurationError ? error.status : undefined);
 }

@@ -2,18 +2,19 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
+import { useConversations } from '@/hooks/use-conversations';
+import { getIdentityLabel, getIdentitySecondaryLabel } from '@/lib/whatsapp-identity';
+import { getInboxErrorMessage } from '@/lib/inbox-errors';
 import { differenceInDays, differenceInHours, differenceInMinutes, format, isValid, isYesterday } from 'date-fns';
 import { Bell, BellOff, Check, ChevronDown, Plus, RefreshCw, Search, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
-  CONVERSATIONS_QUERY_KEY,
   type ConversationThread,
   type ConversationStatusFilter,
   countThreadsByStatus,
-  fetchConversations,
   filterConversationThreads,
   groupConversationsByPhoneNumber,
+  parseTimestamp,
   shortConversationId,
 } from '@/lib/inbox-data';
 import { Button } from '@/components/ui/button';
@@ -89,12 +90,6 @@ type ThreadNotificationSnapshot = {
   lastMessageDirection?: string;
 };
 
-function parseTimestamp(timestamp?: string): number {
-  if (!timestamp) return 0;
-  const time = Date.parse(timestamp);
-  return Number.isFinite(time) ? time : 0;
-}
-
 function getThreadNotificationSnapshot(thread: ConversationThread): ThreadNotificationSnapshot {
   return {
     lastActiveAt: thread.lastActiveAt,
@@ -153,16 +148,17 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
   const hasInitializedNotificationSnapshotsRef = useRef(false);
 
   const {
-    data: conversations = [],
+    conversations,
+    headConversationIds,
+    partialErrors,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
     error,
     isPending,
     isFetching,
     refetch,
-  } = useQuery({
-    queryKey: CONVERSATIONS_QUERY_KEY,
-    queryFn: fetchConversations,
-    refetchInterval: 10_000,
-  });
+  } = useConversations();
 
   const threads = useMemo(
     () => groupConversationsByPhoneNumber(conversations),
@@ -244,6 +240,7 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
   }, []);
 
   useEffect(() => {
+    if (isPending) return;
     const currentSnapshots = new Map(
       threads.map((thread) => [thread.key, getThreadNotificationSnapshot(thread)]),
     );
@@ -263,11 +260,11 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
           return;
         }
 
-        if (!shouldNotifyForThread(thread, previousThreadSnapshotsRef.current.get(thread.key))) {
+        if (!headConversationIds.has(thread.latestConversation.id) || !shouldNotifyForThread(thread, previousThreadSnapshotsRef.current.get(thread.key))) {
           return;
         }
 
-        const title = thread.contactName || thread.phoneNumber || 'New WhatsApp message';
+        const title = getIdentityLabel(thread);
         const body = thread.lastMessage?.content || 'New message received';
         const notification = new Notification(title, {
           body,
@@ -283,7 +280,7 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
     }
 
     previousThreadSnapshotsRef.current = currentSnapshots;
-  }, [notificationPermission, notificationsEnabled, onSelectThread, selectedThreadKey, threads]);
+  }, [headConversationIds, isPending, notificationPermission, notificationsEnabled, onSelectThread, selectedThreadKey, threads]);
 
   useEffect(() => {
     if (!isStatusMenuOpen && !isFilterMenuOpen) return;
@@ -431,8 +428,8 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search phone numbers..."
-            aria-label="Search phone numbers"
+            placeholder="Search names, phones or usernames..."
+            aria-label="Search conversations"
             className="h-9 rounded-md border-[var(--chat-border-strong)] bg-[var(--chat-input)] pl-9 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-primary"
           />
         </div>
@@ -530,14 +527,25 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
         </div>
       </div>
 
+      {error && conversations.length > 0 && (
+        <p role="alert" className="p-3 text-xs text-destructive">{getInboxErrorMessage(error, 'Could not refresh conversations')}</p>
+      )}
+      {partialErrors.length > 0 && (
+        <div role="alert" className="border-b border-[var(--chat-border)] p-3 text-xs text-destructive">
+          Some numbers could not be loaded. Refresh or load more to retry.
+          {[...new Map(partialErrors.map(error => [error.phoneNumberId, error])).values()].map(error => (
+            <p key={error.phoneNumberId}>{error.phoneNumberId}: {error.error}</p>
+          ))}
+        </div>
+      )}
       <ScrollArea className="h-0 flex-1 overflow-hidden overscroll-contain">
-        {error ? (
+        {error && conversations.length === 0 ? (
           <div className="p-4 text-center text-sm text-destructive">
-            Failed to load conversations
+            {getInboxErrorMessage(error, 'Failed to load conversations')}
           </div>
         ) : filteredThreads.length === 0 ? (
           <div className="p-4 text-center text-muted-foreground">
-            {searchQuery ? 'No phone numbers found' : 'No conversations found'}
+            {searchQuery ? 'No contacts found in loaded conversations' : 'No conversations found'}
           </div>
         ) : (
           <div className="w-full overflow-hidden">
@@ -553,13 +561,13 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
                 <div className="flex items-start gap-3 overflow-hidden">
                   <Avatar className="mt-0.5 size-9 flex-shrink-0">
                     <AvatarFallback className="bg-cyan-100 text-xs font-semibold text-cyan-950">
-                      {getAvatarInitials(thread.contactName, thread.phoneNumber)}
+                      {getAvatarInitials(getIdentityLabel(thread), thread.phoneNumber)}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex min-w-0 flex-1 items-start justify-between gap-2 overflow-hidden">
                     <div className="min-w-0 flex-1 overflow-hidden">
                       <p className="truncate text-sm font-semibold leading-5 text-foreground">
-                        {thread.contactName || thread.phoneNumber || 'Unknown phone number'}
+                        {getIdentityLabel(thread)}
                       </p>
                       {thread.lastMessage && (
                         <p className="truncate text-xs leading-4 text-muted-foreground">
@@ -570,7 +578,7 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
                         </p>
                       )}
                       <p className="truncate text-[11px] leading-4 text-muted-foreground/80">
-                        {thread.phoneNumber}
+                        {getIdentitySecondaryLabel(thread)}
                         {(thread.inboxDisplayName || thread.inboxPhoneNumber) &&
                           ` · via ${thread.inboxDisplayName || thread.inboxPhoneNumber}`}
                         {thread.conversationCount > 1 && ` · ${thread.conversationCount} conversations`}
@@ -592,6 +600,14 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
                 </div>
               </button>
             ))}
+          </div>
+        )}
+        {hasNextPage && (
+          <div className="p-3 text-center">
+            <Button variant="outline" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()}>
+              {isFetchingNextPage ? 'Loading conversations…' : 'Load more conversations'}
+            </Button>
+            <p className="mt-2 text-xs text-muted-foreground">Search and counts cover loaded conversations.</p>
           </div>
         )}
       </ScrollArea>

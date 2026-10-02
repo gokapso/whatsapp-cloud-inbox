@@ -9,11 +9,14 @@ A WhatsApp Web-style inbox built with Next.js for the WhatsApp Cloud API. Send m
 ## Features
 
 - **Real-time messaging** - Auto-polling keeps conversations updated
-- **Template messages** - Full support for WhatsApp templates with parameters (header, body, buttons)
+- **BSUID recipients** - Display and search phone-less contacts; send text, media, templates, and buttons using their business-scoped user ID
+- **Paginated history** - Load more conversations and older messages, including previous conversations with the same contact
+- **Template messages** - Send approved templates with named or positional text parameters
 - **Interactive messages** - Send button messages with up to 3 custom actions
 - **Media support** - Send images, videos, documents, and audio
 - **24-hour window enforcement** - Automatically restricts messaging outside WhatsApp's window
-- **Failed message indicators** - Visual feedback for delivery failures
+- **Actionable errors** - Preserve routing, credit, rate-limit, and provider errors without losing your draft
+- **Message attribution** - Show Meta agent, other-app, standby-copy, and delivery failure details when Kapso supplies them
 - **WhatsApp-style UI** - Familiar interface with read receipts, timestamps, and message bubbles
 
 ## Setup
@@ -26,10 +29,12 @@ A WhatsApp Web-style inbox built with Next.js for the WhatsApp Cloud API. Send m
 
 ### 2. Clone and install
 
+Use [Bun](https://bun.sh/) and Node.js 20.19 or newer (required by the WhatsApp SDK).
+
 ```bash
 git clone https://github.com/gokapso/whatsapp-cloud-inbox.git
 cd whatsapp-cloud-inbox
-npm install
+bun install
 ```
 
 ### 3. Environment variables
@@ -51,7 +56,7 @@ WABA_ID=your_business_account_id
 ### 4. Run
 
 ```bash
-npm run dev
+bun run dev
 ```
 
 Open [http://localhost:4000](http://localhost:4000)
@@ -63,7 +68,7 @@ Open [http://localhost:4000/settings](http://localhost:4000/settings) to choose 
 ### Template Messages
 
 Send WhatsApp-approved templates with dynamic parameters:
-- **Header + Body + Button parameters** - Full template support
+- **Text parameters** - Header, body, and supported button parameters
 - **Named and positional parameters** - Automatic detection
 - **Two-step flow** - Select template → Fill parameters → Send
 
@@ -85,13 +90,34 @@ Automatically enforces WhatsApp's messaging policy:
 
 - ✅ Text messages
 - ✅ Images, videos, audio, documents
-- ✅ Template messages (with all parameter types)
+- ✅ Template messages with text parameters
 - ✅ Interactive button messages
 - ✅ Failed message indicators
 
+## Identity and history
+
+Contacts are grouped within each tracked business number by BSUID, with phone or parent-ID fallback for older records. A phone or parent ID links to a BSUID only when the loaded records identify one unambiguous contact. The same BSUID on two business numbers remains two separate inbox threads.
+
+Use **Load more conversations** and **Load older messages** to retrieve additional pages. Search and status counts cover the conversations already loaded. After loading older history, automatic polling refreshes only the latest page. The regular-message composer uses Kapso's last inbound timestamp as well as loaded messages to determine the 24-hour service window.
+
+A rejected send keeps your draft and attachment. An accepted send followed by a failed history refresh shows a separate refresh warning. Sends are not automatically retried; reconcile an unknown result before trying again.
+
+This inbox does not yet provide the hosted Kapso inbox's ownership controls, team assignments, shared quick replies, contact notes, server-wide search, or full structured-message viewers. Meta-agent attribution and routing errors do not grant control of a conversation. Manage ownership in Kapso before replying to a thread controlled by another application.
+
 ## Contributing
 
-Issues and PRs welcome. Keep it simple.
+Issues and PRs welcome. Keep it simple. Source code lives in `src/app`, `src/components`, `src/hooks`, and `src/lib`.
+
+Run the local checks:
+
+```bash
+bun run test
+bun run typecheck
+bun run lint
+bun run build
+```
+
+The automated tests use fictional data and mock the provider transport. Live WhatsApp delivery requires a connected test project and a recipient who has agreed to receive the test messages.
 
 ## License
 

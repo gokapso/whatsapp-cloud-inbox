@@ -1,5 +1,7 @@
 'use client';
 
+import { getRecipientAddress, type WhatsappIdentity } from '@/lib/whatsapp-identity';
+import { getInboxErrorMessage, readInboxResponse } from '@/lib/inbox-errors';
 import { useState } from 'react';
 import { Send, Loader2, ArrowLeft } from 'lucide-react';
 import {
@@ -23,7 +25,7 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   template: Template;
   parameterInfo: TemplateParameterInfo;
-  phoneNumber: string;
+  identity: WhatsappIdentity;
   phoneNumberId?: string;
   onBack: () => void;
   onTemplateSent?: () => void;
@@ -34,7 +36,7 @@ export function TemplateParametersDialog({
   onOpenChange,
   template,
   parameterInfo,
-  phoneNumber,
+  identity,
   phoneNumberId,
   onBack,
   onTemplateSent,
@@ -60,6 +62,9 @@ export function TemplateParametersDialog({
       return;
     }
 
+    const address = getRecipientAddress(identity);
+    if (!address) { setError('This contact has no available recipient identifier'); return; }
+
     setSending(true);
     setError(null);
 
@@ -70,7 +75,7 @@ export function TemplateParametersDialog({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          to: phoneNumber,
+          ...address,
           phoneNumberId,
           templateName: template.name,
           languageCode: template.language,
@@ -79,17 +84,14 @@ export function TemplateParametersDialog({
         }),
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to send template');
-      }
+      await readInboxResponse(response);
 
       onOpenChange(false);
       setParameterValues({});
       onTemplateSent?.();
     } catch (err) {
       console.error('Error sending template:', err);
-      setError(err instanceof Error ? err.message : 'Failed to send template');
+      setError(getInboxErrorMessage(err, 'Failed to send template'));
     } finally {
       setSending(false);
     }
