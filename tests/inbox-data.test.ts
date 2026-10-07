@@ -19,6 +19,33 @@ function message(id: string, values: Partial<Message> = {}): Message {
 }
 
 describe('recipient identity', () => {
+  it('searches formatted and partial contact and business phone numbers', () => {
+    const threads = groupConversationsByPhoneNumber([
+      conversation('one', { phoneNumber: '15551234567', inboxPhoneNumber: '+1 (202) 555-0100' }),
+    ]);
+    for (const query of ['+1 (555) 123-4567', '123-4567', '12025550100', '+1 202 555 0100']) {
+      assert.equal(filterConversationThreads(threads, 'all', query).length, 1, query);
+    }
+    assert.equal(filterConversationThreads(threads, 'all', '555-9999').length, 0);
+  });
+  it('keeps text and opaque identity searches separate from phone normalization', () => {
+    const threads = groupConversationsByPhoneNumber([
+      conversation('one', { phoneNumber: '15551234567', businessScopedUserId: 'CL.MixedCase123', parentBusinessScopedUserId: 'CL.ENT.Parent123', contactName: 'Fixture Contact' }),
+    ]);
+    for (const query of ['  FIXTURE CONTACT  ', 'CL.MixedCase123', 'cl.ent.parent123']) {
+      assert.equal(filterConversationThreads(threads, 'all', query).length, 1, query);
+    }
+    assert.equal(filterConversationThreads(threads, 'all', 'CL.15551234567').length, 0);
+    assert.equal(threads[0].businessScopedUserId, 'CL.MixedCase123');
+  });
+  it('applies status and search together without dropping loaded session matches', () => {
+    const threads = groupConversationsByPhoneNumber([
+      conversation('older-session', { businessScopedUserId: 'CL.Test123', status: 'ended', lastActiveAt: '2026-10-01T00:00:00Z' }),
+      conversation('latest-session', { businessScopedUserId: 'CL.Test123', status: 'active', lastActiveAt: '2026-10-02T00:00:00Z' }),
+    ]);
+    assert.equal(filterConversationThreads(threads, 'active', 'older-session').length, 1);
+    assert.equal(filterConversationThreads(threads, 'ended', 'older-session').length, 0);
+  });
   it('groups phone-less BSUID history and searches usernames and opaque IDs', () => {
     const threads = groupConversationsByPhoneNumber([
       conversation('old', { businessScopedUserId: 'US.opaque123', username: 'test_user' }),

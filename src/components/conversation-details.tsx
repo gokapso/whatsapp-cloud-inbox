@@ -55,7 +55,7 @@ export function ConversationDetails({
   return (
     <aside
       aria-label="Contact details"
-      className="absolute inset-y-0 right-0 z-30 flex w-full max-w-80 shrink-0 flex-col border-l border-[var(--chat-border)] bg-[var(--chat-canvas)] shadow-lg md:static md:w-72 md:shadow-none"
+      className="absolute inset-y-0 right-0 z-30 flex w-full max-w-80 shrink-0 flex-col border-l border-[var(--chat-border)] bg-[var(--chat-canvas)] shadow-lg lg:static lg:w-72 lg:shadow-none"
     >
       <div className="flex h-14 items-center justify-between border-b px-4">
         <h3 className="text-sm font-semibold">Contact details</h3>

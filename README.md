@@ -112,7 +112,9 @@ Automatically enforces WhatsApp's messaging policy:
 
 Contacts are grouped within each tracked business number by BSUID, with phone or parent-ID fallback for older records. A phone or parent ID links to a BSUID only when the loaded records identify one unambiguous contact. The same BSUID on two business numbers remains two separate inbox threads.
 
-Use **Load more conversations** and **Load older messages** to retrieve additional pages. Search and status counts cover the conversations already loaded. After loading older history, automatic polling refreshes only the latest page. The regular-message composer uses Kapso's last inbound timestamp as well as loaded messages to determine the 24-hour service window.
+Use **Load more conversations** and **Load older messages** to retrieve additional pages. Search and status counts cover the conversations already loaded. Search matches contact names, usernames, phone numbers (including pasted formatting), business numbers, BSUIDs, parent BSUIDs, and session IDs; it does not search message text or unloaded conversations. After loading older history, automatic polling refreshes only the latest page. The regular-message composer uses Kapso's last inbound timestamp as well as loaded messages to determine the 24-hour service window.
+
+For server-side contact filtering, the public [Platform Contacts API](https://docs.kapso.ai/api/platform/v1/contacts/list-contacts) accepts `profile_name_contains`, `wa_id_contains`, and exact `business_scoped_user_id`. The [Platform Conversations API](https://docs.kapso.ai/api/platform/v1/conversations/list-conversations) accepts `phone_number` and other structured filters. Neither exposes the hosted Inbox's unified free-text search through a project API key, and this app's `/api/conversations` route does not accept a search query.
 
 A rejected send keeps your draft and attachment. An accepted send followed by a failed history refresh shows a separate refresh warning. Sends are not automatically retried; reconcile an unknown result before trying again.
 

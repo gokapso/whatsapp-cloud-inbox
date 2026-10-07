@@ -206,6 +206,7 @@ export function filterConversationThreads(
   searchQuery: string,
 ): ConversationThread[] {
   const normalizedQuery = searchQuery.trim().toLowerCase();
+  const phoneQuery = /^[+\d\s().-]+$/.test(normalizedQuery) ? normalizedQuery.replace(/\D/g, '') : '';
 
   return threads.filter((thread) => {
     if (statusFilter !== 'all' && thread.latestConversation.status !== statusFilter) {
@@ -217,6 +218,10 @@ export function filterConversationThreads(
     return (
       thread.phoneNumber?.toLowerCase().includes(normalizedQuery) ||
       thread.inboxPhoneNumber?.toLowerCase().includes(normalizedQuery) ||
+      (phoneQuery && (
+        thread.phoneNumber?.replace(/\D/g, '').includes(phoneQuery) ||
+        thread.inboxPhoneNumber?.replace(/\D/g, '').includes(phoneQuery)
+      )) ||
       thread.inboxDisplayName?.toLowerCase().includes(normalizedQuery) ||
       thread.contactName?.toLowerCase().includes(normalizedQuery) ||
       thread.username?.toLowerCase().includes(normalizedQuery.replace(/^@/, '')) ||
