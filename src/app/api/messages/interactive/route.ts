@@ -1,3 +1,4 @@
+import { readRecipientAddress } from '@/lib/message-recipient';
 import { NextResponse } from 'next/server';
 import { configurationErrorResponse, resolvePhoneNumberContext } from '@/lib/inbox-settings';
 import { whatsappClient } from '@/lib/whatsapp-client';
@@ -5,13 +6,15 @@ import { whatsappClient } from '@/lib/whatsapp-client';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { phoneNumber, header, body: bodyText, buttons, phoneNumberId: requestedPhoneNumberId } = body;
+    const { phoneNumber, to, recipient, header, body: bodyText, buttons, phoneNumberId: requestedPhoneNumberId } = body;
     const configuredPhoneNumber = await resolvePhoneNumberContext(requestedPhoneNumberId);
     const phoneNumberId = configuredPhoneNumber.phone_number_id;
 
-    if (!phoneNumber || !bodyText || !buttons || buttons.length === 0) {
+    const recipientAddress = readRecipientAddress({ to: to || phoneNumber, recipient });
+
+    if (!bodyText || !buttons || buttons.length === 0) {
       return NextResponse.json(
-        { error: 'Missing required fields: phoneNumber, body, buttons' },
+        { error: 'Missing required fields: body, buttons' },
         { status: 400 }
       );
     }
@@ -25,15 +28,9 @@ export async function POST(request: Request) {
     }
 
     // Build interactive button message payload
-    const payload: {
-      phoneNumberId: string;
-      to: string;
-      bodyText: string;
-      header?: { type: 'text'; text: string };
-      buttons: Array<{ id: string; title: string }>;
-    } = {
+    const payload: Parameters<typeof whatsappClient.messages.sendInteractiveButtons>[0] = {
       phoneNumberId,
-      to: phoneNumber,
+      ...recipientAddress,
       bodyText,
       buttons: buttons.map((btn: { id: string; title: string }) => ({
         id: btn.id,

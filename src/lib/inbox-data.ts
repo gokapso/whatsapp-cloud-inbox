@@ -1,12 +1,16 @@
-import type { MediaData } from '@kapso/whatsapp-cloud-api';
+import type { GraphPaging, MediaData, MetaMessage } from '@kapso/whatsapp-cloud-api';
+
+import { buildIdentityKeys, type WhatsappIdentity } from './whatsapp-identity';
+import { readInboxResponse } from './inbox-errors';
 
 export type ConversationStatusFilter = 'all' | 'active' | 'ended';
 
-export type Conversation = {
+export type Conversation = WhatsappIdentity & {
   id: string;
-  phoneNumber: string;
+  phoneNumber?: string;
   status: string;
   lastActiveAt?: string;
+  lastInboundAt?: string;
   phoneNumberId: string;
   inboxPhoneNumber?: string;
   inboxDisplayName?: string;
@@ -21,15 +25,32 @@ export type Conversation = {
   };
 };
 
-export type Message = {
+export type DeliveryError = { code?: number; title?: string; message?: string; details?: string };
+
+export type Message = WhatsappIdentity & {
   id: string;
   conversationId: string;
   phoneNumberId: string;
+  origin?: string;
+  passive?: boolean;
+  deliveryError?: DeliveryError;
+  messageTypeData?: Record<string, unknown>;
+  flowResponse?: Record<string, unknown>;
+  flowToken?: string;
+  flowName?: string;
+  location?: MetaMessage['location'];
+  interactive?: MetaMessage['interactive'];
+  template?: MetaMessage['template'];
+  order?: MetaMessage['order'];
+  orderText?: string;
+  contacts?: MetaMessage['contacts'];
+  sticker?: MetaMessage['sticker'];
+  context?: MetaMessage['context'];
   direction: 'inbound' | 'outbound';
   content: string;
   createdAt: string;
   status?: string;
-  phoneNumber: string;
+  phoneNumber?: string;
   hasMedia: boolean;
   mediaData?: {
     url: string;
@@ -57,9 +78,9 @@ export type Message = {
   };
 };
 
-export type ConversationThread = {
+export type ConversationThread = WhatsappIdentity & {
   key: string;
-  phoneNumber: string;
+  phoneNumber?: string;
   phoneNumberId: string;
   inboxPhoneNumber?: string;
   inboxDisplayName?: string;
@@ -71,6 +92,7 @@ export type ConversationThread = {
   previousConversationIds: string[];
   status: string;
   lastActiveAt?: string;
+  lastInboundAt?: string;
   lastMessage?: Conversation['lastMessage'];
 };
 
@@ -88,17 +110,10 @@ export function phoneThreadMessagesQueryKey(
   return ['phone-thread-messages', phoneNumberId ?? '', phoneNumber ?? '', conversationIds.join(':')] as const;
 }
 
-function parseTimestamp(timestamp?: string): number {
+export function parseTimestamp(timestamp?: string): number {
   if (!timestamp) return 0;
   const time = Date.parse(timestamp);
   return Number.isFinite(time) ? time : 0;
-}
-
-function conversationGroupKey(conversation: Conversation): string {
-  const phoneNumber = conversation.phoneNumber.trim();
-  const comparablePhoneNumber = phoneNumber.replace(/\D/g, '');
-  const contactKey = comparablePhoneNumber || phoneNumber || `conversation:${conversation.id}`;
-  return `${conversation.phoneNumberId}:${contactKey}`;
 }
 
 function byMostRecentConversation(a: Conversation, b: Conversation): number {
@@ -107,44 +122,50 @@ function byMostRecentConversation(a: Conversation, b: Conversation): number {
   return b.id.localeCompare(a.id);
 }
 
-export async function fetchConversations(): Promise<Conversation[]> {
-  const response = await fetch('/api/conversations?limit=100');
-  const data = await response.json();
+export type ConversationPage = {
+  data: Conversation[];
+  nextCursor?: string;
+  partialErrors: Array<{ phoneNumberId: string; error: string }>;
+};
 
-  if (!response.ok) {
-    throw new Error(data.error || 'Failed to fetch conversations');
-  }
+export type MessagePage = { data: Message[]; paging?: GraphPaging };
 
-  return data.data || [];
+export async function fetchConversations(cursor?: string): Promise<ConversationPage> {
+  const params = new URLSearchParams({ limit: '100' });
+  if (cursor) params.set('cursor', cursor);
+  return readInboxResponse<ConversationPage>(await fetch(`/api/conversations?${params}`));
 }
 
-export async function fetchConversationMessages(conversationId: string, phoneNumberId?: string): Promise<Message[]> {
+export async function fetchConversationMessages(conversationId: string, phoneNumberId?: string, after?: string): Promise<MessagePage> {
   const params = new URLSearchParams({ limit: '100' });
-  if (phoneNumberId) {
-    params.set('phoneNumberId', phoneNumberId);
+  if (phoneNumberId) params.set('phoneNumberId', phoneNumberId);
+  if (after) params.set('after', after);
+  return readInboxResponse<MessagePage>(await fetch(`/api/messages/${encodeURIComponent(conversationId)}?${params}`));
+}
+
+export function mergeConversations(pages: ConversationPage[]): Conversation[] {
+  // Fresh head data wins over overlapping historical pages.
+  const records = new Map<string, Conversation>();
+  for (const page of [...pages].reverse()) {
+    for (const conversation of page.data) records.set(conversation.id, conversation);
   }
+  return [...records.values()];
+}
 
-  const response = await fetch(`/api/messages/${conversationId}?${params.toString()}`);
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.error || 'Failed to fetch messages');
+export function mergeMessagePages(pages: MessagePage[]): Message[] {
+  const records = new Map<string, Message>();
+  for (const page of [...pages].reverse()) {
+    for (const message of page.data) records.set(message.id, message);
   }
-
-  const messages = (data.data || []).map((message: Omit<Message, 'conversationId'>) => ({
-    ...message,
-    phoneNumberId: message.phoneNumberId ?? phoneNumberId ?? '',
-    conversationId,
-  }));
-
-  return normalizeMessages(messages);
+  return normalizeMessages([...records.values()]);
 }
 
 export function groupConversationsByPhoneNumber(conversations: Conversation[]): ConversationThread[] {
   const groupedConversations = new Map<string, Conversation[]>();
+  const identityKeys = buildIdentityKeys(conversations);
 
   conversations.forEach((conversation) => {
-    const key = conversationGroupKey(conversation);
+    const key = identityKeys.get(conversation.id)!;
     const existing = groupedConversations.get(key) || [];
     existing.push(conversation);
     groupedConversations.set(key, existing);
@@ -157,7 +178,10 @@ export function groupConversationsByPhoneNumber(conversations: Conversation[]): 
 
       return {
         key,
-        phoneNumber: latestConversation.phoneNumber,
+        phoneNumber: latestConversation.phoneNumber || sortedConversations.find(conversation => conversation.phoneNumber)?.phoneNumber,
+        businessScopedUserId: latestConversation.businessScopedUserId || sortedConversations.find(conversation => conversation.businessScopedUserId)?.businessScopedUserId,
+        parentBusinessScopedUserId: latestConversation.parentBusinessScopedUserId || sortedConversations.find(conversation => conversation.parentBusinessScopedUserId)?.parentBusinessScopedUserId,
+        username: latestConversation.username || sortedConversations.find(conversation => conversation.username)?.username,
         phoneNumberId: latestConversation.phoneNumberId,
         inboxPhoneNumber: latestConversation.inboxPhoneNumber,
         inboxDisplayName: latestConversation.inboxDisplayName,
@@ -169,6 +193,7 @@ export function groupConversationsByPhoneNumber(conversations: Conversation[]): 
         previousConversationIds: sortedConversations.slice(1).map(conversation => conversation.id),
         status: latestConversation.status,
         lastActiveAt: latestConversation.lastActiveAt,
+        lastInboundAt: sortedConversations.map(conversation => conversation.lastInboundAt).filter((date): date is string => Boolean(date)).sort((a, b) => parseTimestamp(b) - parseTimestamp(a))[0],
         lastMessage: latestConversation.lastMessage,
       };
     })
@@ -181,6 +206,7 @@ export function filterConversationThreads(
   searchQuery: string,
 ): ConversationThread[] {
   const normalizedQuery = searchQuery.trim().toLowerCase();
+  const phoneQuery = /^[+\d\s().-]+$/.test(normalizedQuery) ? normalizedQuery.replace(/\D/g, '') : '';
 
   return threads.filter((thread) => {
     if (statusFilter !== 'all' && thread.latestConversation.status !== statusFilter) {
@@ -190,10 +216,17 @@ export function filterConversationThreads(
     if (!normalizedQuery) return true;
 
     return (
-      thread.phoneNumber.toLowerCase().includes(normalizedQuery) ||
+      thread.phoneNumber?.toLowerCase().includes(normalizedQuery) ||
       thread.inboxPhoneNumber?.toLowerCase().includes(normalizedQuery) ||
+      (phoneQuery && (
+        thread.phoneNumber?.replace(/\D/g, '').includes(phoneQuery) ||
+        thread.inboxPhoneNumber?.replace(/\D/g, '').includes(phoneQuery)
+      )) ||
       thread.inboxDisplayName?.toLowerCase().includes(normalizedQuery) ||
       thread.contactName?.toLowerCase().includes(normalizedQuery) ||
+      thread.username?.toLowerCase().includes(normalizedQuery.replace(/^@/, '')) ||
+      thread.businessScopedUserId?.toLowerCase().includes(normalizedQuery) ||
+      thread.parentBusinessScopedUserId?.toLowerCase().includes(normalizedQuery) ||
       thread.conversations.some(conversation => conversation.id.toLowerCase().includes(normalizedQuery))
     );
   });
@@ -216,12 +249,16 @@ export function shortConversationId(conversationId?: string): string {
   return conversationId.replace(/-/g, '').slice(0, 8);
 }
 
-function getReplyPreviewContent(message: Message): string {
-  const content = message.caption || message.content || message.filename || '';
+export function getReplyPreviewContent(
+  message: Message,
+  maxLength = 140,
+  contentOverride?: string | null,
+): string {
+  const content = contentOverride || message.caption || message.content || message.filename || '';
   const trimmedContent = content.trim();
 
   if (trimmedContent) {
-    return trimmedContent.length > 120 ? `${trimmedContent.slice(0, 117)}...` : trimmedContent;
+    return trimmedContent.length > maxLength ? `${trimmedContent.slice(0, maxLength - 3)}...` : trimmedContent;
   }
 
   if (message.hasMedia && message.messageType) {
@@ -232,13 +269,13 @@ function getReplyPreviewContent(message: Message): string {
 }
 
 export function normalizeMessages(messages: Message[]): Message[] {
-  const reactions = messages.filter(message => message.messageType === 'reaction');
+  const reactions = messages.filter(message => message.messageType === 'reaction').sort((a, b) => parseTimestamp(a.createdAt) - parseTimestamp(b.createdAt) || a.id.localeCompare(b.id));
   const regularMessages = messages.filter(message => message.messageType !== 'reaction');
   const reactionMap = new Map<string, string>();
   const messageMap = new Map(regularMessages.map(message => [message.id, message]));
 
   reactions.forEach((reaction) => {
-    if (reaction.reactedToMessageId && reaction.reactionEmoji) {
+    if (reaction.reactedToMessageId && typeof reaction.reactionEmoji === 'string') {
       reactionMap.set(reaction.reactedToMessageId, reaction.reactionEmoji);
     }
   });
@@ -253,7 +290,7 @@ export function normalizeMessages(messages: Message[]): Message[] {
           ? {
               id: repliedMessage.id,
               conversationId: repliedMessage.conversationId,
-              content: getReplyPreviewContent(repliedMessage),
+              content: getReplyPreviewContent(repliedMessage, 120),
               direction: repliedMessage.direction,
               messageType: repliedMessage.messageType,
               senderName: repliedMessage.direction === 'outbound' ? 'You' : 'Contact',
@@ -271,7 +308,7 @@ export function normalizeMessages(messages: Message[]): Message[] {
 
       return {
         ...message,
-        ...(reaction ? { reactionEmoji: reaction } : {}),
+        ...(reaction !== undefined ? { reactionEmoji: reaction || null } : {}),
         ...(repliedTo ? { repliedTo } : {}),
       };
     })

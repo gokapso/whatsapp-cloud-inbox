@@ -1,3 +1,4 @@
+import { inboxErrorResponse } from './inbox-server-errors';
 import { cookies } from 'next/headers';
 import type { InboxSettings, KapsoPhoneNumber } from '@/types/settings';
 
@@ -50,11 +51,11 @@ function getKapsoApiBaseUrl(): string {
   return 'https://api.kapso.ai';
 }
 
-function platformApiUrl(path: string): string {
+export function platformApiUrl(path: string): string {
   return `${getKapsoApiBaseUrl()}/platform/v1${path}`;
 }
 
-function getKapsoApiKey(): string {
+export function getKapsoApiKey(): string {
   const apiKey = process.env.KAPSO_API_KEY;
   if (!apiKey) {
     throw new InboxConfigurationError('KAPSO_API_KEY environment variable is not set', 500);
@@ -263,11 +264,5 @@ export async function resolvePhoneNumberContext(phoneNumberId?: string): Promise
 }
 
 export function configurationErrorResponse(error: unknown): Response {
-  const status = error instanceof InboxConfigurationError ? error.status : 500;
-  const message = error instanceof Error ? error.message : 'Inbox configuration error';
-
-  return Response.json(
-    { error: message },
-    { status }
-  );
+  return inboxErrorResponse(error, error instanceof InboxConfigurationError ? error.status : undefined);
 }
