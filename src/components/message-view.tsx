@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import {
   format,
   formatDistanceToNow,
@@ -12,21 +12,24 @@ import {
 import {
   RefreshCw,
   Paperclip,
-  Send,
   X,
   AlertCircle,
   MessageSquare,
   XCircle,
-  ListTree,
   ArrowLeft,
   Check,
   Reply,
   Loader2,
+  CheckCircle2,
+  RotateCcw,
+  PanelRight,
+  ArrowDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   CONVERSATIONS_QUERY_KEY,
   type Conversation,
+  type ConversationPage,
   type Message,
   getReplyPreviewContent,
   phoneThreadMessagesQueryKey,
@@ -40,17 +43,21 @@ import { MediaMessage } from "@/components/media-message";
 import { TemplateSelectorDialog } from "@/components/template-selector-dialog";
 import { InteractiveMessageDialog } from "@/components/interactive-message-dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { ContactAvatar } from '@/components/contact-avatar';
+import { MessageComposer } from '@/components/message-composer';
+import { ConversationDetails } from '@/components/conversation-details';
+import { WhatsappFormattedText } from '@/components/whatsapp-formatted-text';
+import { StructuredMessage } from '@/components/structured-message';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 function formatMessageTime(timestamp: string): string {
   try {
     const date = new Date(timestamp);
     if (isValid(date)) {
-      return format(date, "HH:mm");
+      return format(date, "hh:mm a");
     }
     return "";
   } catch {
@@ -65,7 +72,7 @@ function formatDateDivider(timestamp: string): string {
 
     if (isToday(date)) return "Today";
     if (isYesterday(date)) return "Yesterday";
-    return format(date, "MMMM d, yyyy");
+    return format(date, "EEEE, MMM d");
   } catch {
     return "";
   }
@@ -290,6 +297,10 @@ export function MessageView({
   const contactLabel = getIdentityLabel(identity);
   const [refreshWarning, setRefreshWarning] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const [showStatusDialog, setShowStatusDialog] = useState(false);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [messageInput, setMessageInput] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -300,17 +311,14 @@ export function MessageView({
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const messageInputRef = useRef<HTMLInputElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const lastInitialScrollKeyRef = useRef("");
   const highlightTimeoutRef = useRef<number | null>(null);
   const [localReplyContexts, setLocalReplyContexts] = useState<LocalReplyContexts>({});
   const queryClient = useQueryClient();
   const lastSeenText = formatLastSeen(lastActiveAt);
   const displayPhoneNumber = formatDisplayPhoneNumber(phoneNumber);
-  const displayInboxPhoneNumber = formatDisplayPhoneNumber(inboxPhoneNumber);
   const threadConversationIds = useMemo(() => {
     const conversationIds = conversations.map(
       (conversation) => conversation.id,
@@ -343,7 +351,6 @@ export function MessageView({
       viewport.scrollTop = viewport.scrollHeight;
     }
 
-    messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
   }, [getScrollViewport]);
 
   const scrollToSelectedConversation = useCallback(() => {
@@ -361,7 +368,7 @@ export function MessageView({
       selectedConversationMessages[selectedConversationMessages.length - 1];
 
     if (targetMessage) {
-      targetMessage.scrollIntoView({ behavior: "auto", block: "center" });
+      viewport.scrollTop += targetMessage.getBoundingClientRect().bottom - viewport.getBoundingClientRect().bottom + 16;
       return;
     }
 
@@ -378,7 +385,7 @@ export function MessageView({
 
     if (!targetMessage) return;
 
-    targetMessage.scrollIntoView({ behavior: "smooth", block: "center" });
+    viewport.scrollTo({ top: viewport.scrollTop + targetMessage.getBoundingClientRect().top - viewport.getBoundingClientRect().top - (viewport.clientHeight - targetMessage.clientHeight) / 2, behavior: 'smooth' });
     setHighlightedMessageId(messageId);
 
     if (highlightTimeoutRef.current !== null) {
@@ -601,9 +608,7 @@ export function MessageView({
     }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleFileSelect = (file: File) => {
 
     setSelectedFile(file);
 
@@ -622,9 +627,6 @@ export function MessageView({
   const handleRemoveFile = () => {
     setSelectedFile(null);
     setFilePreview(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -686,6 +688,7 @@ export function MessageView({
       setSendError(getInboxErrorMessage(error, "Failed to send message"));
     } finally {
       setSending(false);
+      window.requestAnimationFrame(() => messageInputRef.current?.focus());
     }
   };
 
@@ -697,6 +700,35 @@ export function MessageView({
     } catch {
       setRefreshWarning('Template sent. History could not be refreshed; refresh to see the latest messages.');
     }
+  };
+
+  const conversationStatus = conversations.find(conversation => conversation.id === conversationId)?.status;
+  const nextStatus = conversationStatus === 'ended' ? 'active' : 'ended';
+  const handleUpdateStatus = async () => {
+    setIsUpdatingStatus(true);
+    setStatusError(null);
+    try {
+      const result = await readInboxResponse<{ status: string }>(await fetch(`/api/conversations/${encodeURIComponent(conversationId!)}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: nextStatus, phoneNumberId }),
+      }));
+      const updatePage = (page: ConversationPage): ConversationPage => ({ ...page, data: page.data.map(conversation => conversation.id === conversationId ? { ...conversation, status: result.status } : conversation) });
+      queryClient.setQueriesData<InfiniteData<ConversationPage> | ConversationPage>({ queryKey: CONVERSATIONS_QUERY_KEY }, data => {
+        if (!data) return data;
+        return 'pages' in data ? { ...data, pages: data.pages.map(updatePage) } : updatePage(data);
+      });
+      setShowStatusDialog(false);
+      try { await queryClient.invalidateQueries({ queryKey: CONVERSATIONS_QUERY_KEY }, { throwOnError: true }); }
+      catch { setRefreshWarning('Conversation updated. Refresh the list to confirm its latest state.'); }
+    } catch (error) {
+      setStatusError(getInboxErrorMessage(error, 'Could not update the conversation'));
+    } finally { setIsUpdatingStatus(false); }
+  };
+  const handleJumpToConversation = (id: string) => {
+    const viewport = getScrollViewport();
+    const message = viewport?.querySelector<HTMLElement>(`[data-conversation-id="${CSS.escape(id)}"]`);
+    if (message && viewport) { setIsNearBottom(false); viewport.scrollTo({ top: viewport.scrollTop + message.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 16, behavior: 'smooth' }); }
+    else setRefreshWarning('Load older messages to view this conversation.');
+    if (window.innerWidth < 768) setShowDetails(false);
   };
 
   if (!conversationId) {
@@ -748,7 +780,7 @@ export function MessageView({
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-4 lg:p-6">
-          <div className="mx-auto w-full max-w-[900px] space-y-3">
+          <div className="mx-auto w-full max-w-2xl space-y-3">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <div
                 key={i}
@@ -760,7 +792,7 @@ export function MessageView({
                 <div
                   className={cn(
                     "max-w-[min(88%,34rem)] rounded-lg px-3 py-2 shadow-sm sm:max-w-[min(78%,38rem)] lg:max-w-[min(70%,42rem)]",
-                    i % 2 === 0 ? "rounded-br-none" : "rounded-bl-none",
+                    i % 2 === 0 ? "rounded-tr-none" : "rounded-tl-none",
                   )}
                 >
                   <Skeleton
@@ -780,72 +812,37 @@ export function MessageView({
   return (
     <div
       className={cn(
-        "flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--chat-canvas)]",
+        "relative flex min-h-0 min-w-0 flex-1 bg-[var(--chat-canvas)]",
         !isVisible && "hidden md:flex",
       )}
     >
-      <div className="border-b border-[var(--chat-border-strong)] bg-[var(--chat-toolbar)] p-2.5 safe-area-top sm:p-3">
-        <div className="flex items-center justify-between pt-1">
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            {onBack && (
-              <Button
-                onClick={onBack}
-                variant="ghost"
-                size="icon"
-                className="size-11 flex-shrink-0 text-muted-foreground hover:bg-[var(--chat-hover)] md:hidden"
-                aria-label="Back to conversations"
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            )}
-            <div className="flex-1 min-w-0">
-              <h2 className="truncate text-sm font-medium text-foreground sm:text-base">
-                {contactLabel}
-              </h2>
-              {displayPhoneNumber && (
-                <p className="truncate text-xs text-muted-foreground">
-                  {lastSeenText
-                    ? `Active · ${lastSeenText} · ${displayPhoneNumber}`
-                    : displayPhoneNumber}
-                </p>
-              )}
-              {(inboxDisplayName || displayInboxPhoneNumber) && (
-                <p className="truncate text-[11px] text-muted-foreground/80">
-                  via {inboxDisplayName || displayInboxPhoneNumber}
-                  {inboxDisplayName && displayInboxPhoneNumber ? ` · ${displayInboxPhoneNumber}` : ''}
-                </p>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <ThemeToggle className="size-11 md:hidden" />
-            <Button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              variant="ghost"
-              size="icon"
-              className="size-11 text-muted-foreground hover:bg-[var(--chat-hover)] md:size-10"
-              aria-label="Refresh messages"
-              title="Refresh messages"
-            >
-              <RefreshCw
-                className={cn("h-4 w-4", refreshing && "animate-spin")}
-              />
-            </Button>
-          </div>
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+      <header className="flex min-h-14 items-center gap-3 border-b border-[var(--chat-border)] bg-[var(--chat-toolbar)] px-4 py-2 safe-area-top">
+        {onBack && <Button onClick={onBack} type="button" variant="ghost" size="icon" className="size-9 shrink-0 md:hidden" aria-label="Back to conversations"><ArrowLeft className="size-4" /></Button>}
+        <ContactAvatar label={contactLabel} className="hidden md:flex" />
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-sm font-semibold">{contactLabel}</h2>
+          <p className="truncate text-[11px] text-muted-foreground">{conversationStatus === 'ended' ? 'Closed' : conversationStatus === 'active' ? 'Active' : 'Conversation'}{lastSeenText ? ` · ${lastSeenText}` : ''}{displayPhoneNumber ? ` · ${displayPhoneNumber}` : username ? ` · @${username.replace(/^@/, '')}` : ''}</p>
         </div>
-      </div>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Button type="button" onClick={() => { setStatusError(null); setShowStatusDialog(true); }} variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs text-muted-foreground" disabled={isUpdatingStatus || !['active', 'ended'].includes(conversationStatus ?? '')} aria-label={nextStatus === 'ended' ? 'Close conversation' : 'Reopen conversation'} title={nextStatus === 'ended' ? 'Close conversation' : 'Reopen conversation'}>
+            {isUpdatingStatus ? <Loader2 className="size-3.5 animate-spin" /> : nextStatus === 'ended' ? <CheckCircle2 className="size-3.5" /> : <RotateCcw className="size-3.5" />}<span className="hidden sm:inline">{nextStatus === 'ended' ? 'Close' : 'Reopen'}</span>
+          </Button>
+          <Button onClick={handleRefresh} disabled={refreshing} type="button" variant="ghost" size="icon" className="size-8 text-muted-foreground" aria-label="Refresh messages" title="Refresh messages"><RefreshCw className={cn('size-3.5', refreshing && 'animate-spin')} /></Button>
+          <Button type="button" variant="ghost" size="icon" className={cn('size-8 text-muted-foreground', showDetails && 'bg-muted text-foreground')} onClick={() => setShowDetails(open => !open)} aria-label="Contact details" title="Contact details" aria-expanded={showDetails}><PanelRight className="size-3.5" /></Button>
+        </div>
+      </header>
 
       <ScrollArea
         ref={messagesContainerRef}
-        className="h-0 flex-1 overscroll-contain p-3 sm:p-4 lg:p-6"
+        className="h-0 flex-1 overscroll-contain px-3 py-4 sm:px-6"
       >
-        <div className="mx-auto w-full max-w-[900px]">
+        <div className="mx-auto w-full max-w-2xl">
           {historyError && <p role="alert" className="mb-3 text-sm text-destructive">{getInboxErrorMessage(historyError, 'Could not load messages')}</p>}
           {refreshWarning && <p role="status" className="mb-3 text-sm text-muted-foreground">{refreshWarning}</p>}
           {hasNextPage && (
             <div className="mb-4 text-center">
-              <Button variant="outline" disabled={isFetchingNextPage} onClick={async () => {
+              <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" disabled={isFetchingNextPage} onClick={async () => {
                 setIsNearBottom(false);
                 const viewport = getScrollViewport();
                 const height = viewport?.scrollHeight ?? 0;
@@ -883,42 +880,30 @@ export function MessageView({
                   data-message-id={message.id}
                   data-conversation-id={message.conversationId}
                 >
-                  {showConversationDivider && (
-                    <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
-                      <div className="h-px flex-1 bg-[var(--chat-border)]" />
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--chat-canvas)] px-2 py-1">
-                        <span className="h-1.5 w-1.5 rounded-full bg-[var(--chat-presence)]" />
-                        Conversation{" "}
-                        {shortConversationId(message.conversationId)}
-                      </span>
-                      <div className="h-px flex-1 bg-[var(--chat-border)]" />
-                    </div>
-                  )}
-
                   {showDateDivider && (
-                    <div className="flex justify-center my-4">
-                      <Badge variant="secondary" className="shadow-sm">
-                        {formatDateDivider(message.createdAt)}
-                      </Badge>
-                    </div>
+                    <div className="mb-2 flex justify-center py-2"><span className="rounded-full bg-muted/50 px-2.5 py-0.5 text-[10px] font-medium text-muted-foreground">{formatDateDivider(message.createdAt)}</span></div>
+                  )}
+                  {showConversationDivider && (
+                    <div className="my-4 flex items-center gap-3 text-[11px] text-muted-foreground"><div className="h-px flex-1 bg-[var(--chat-border)]" /><span className="inline-flex shrink-0 items-center gap-1.5">{message.conversationId === conversationId && <span className="size-1.5 rounded-full bg-[var(--chat-presence)]" />}Conversation {shortConversationId(message.conversationId)}</span><div className="h-px flex-1 bg-[var(--chat-border)]" /></div>
                   )}
 
                   <div
                     className={cn(
-                      "group flex mb-2 items-start gap-1.5 rounded-lg px-1 py-0.5 transition-colors",
+                      "group flex mb-3 items-start gap-2 rounded-lg py-0.5 transition-colors",
                       message.direction === "outbound"
                         ? "justify-end"
                         : "justify-start",
                       isHighlighted && "bg-primary/10",
                     )}
                   >
+                    {message.direction === 'inbound' && <ContactAvatar label={contactLabel} className="size-6" />}
                     {message.direction === "outbound" && canSendRegularMessage && (
                       <Button
                         type="button"
                         onClick={() => handleReplyToMessage(message)}
                         variant="ghost"
                         size="icon"
-                        className="mt-1 size-7 flex-shrink-0 text-muted-foreground opacity-100 hover:bg-[var(--chat-hover)] sm:opacity-0 sm:group-hover:opacity-100"
+                        className="mt-1 size-7 flex-shrink-0 text-muted-foreground opacity-100 hover:bg-[var(--chat-hover)] sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
                         aria-label="Reply to message"
                         title="Reply"
                       >
@@ -927,10 +912,10 @@ export function MessageView({
                     )}
                     <div
                       className={cn(
-                        "relative max-w-[min(88%,34rem)] rounded-lg px-3 py-2 shadow-sm transition-shadow sm:max-w-[min(78%,38rem)] lg:max-w-[min(70%,42rem)]",
+                        "relative min-w-0 max-w-[85%] rounded-lg px-3 py-2 shadow-sm",
                         message.direction === "outbound"
-                          ? "bg-[var(--chat-bubble-outgoing)] text-foreground rounded-br-none"
-                          : "bg-[var(--chat-bubble-incoming)] text-foreground rounded-bl-none",
+                          ? "bg-[var(--chat-bubble-outgoing)] text-foreground rounded-tr-none"
+                          : "bg-[var(--chat-bubble-incoming)] text-foreground rounded-tl-none",
                         isHighlighted && "ring-2 ring-primary/35",
                       )}
                     >
@@ -1019,16 +1004,13 @@ export function MessageView({
                         </div>
                       ) : null}
 
+                      <StructuredMessage message={message} />
                       {message.caption && (
-                        <p className="text-sm break-words whitespace-pre-wrap mb-1">
-                          {message.caption}
-                        </p>
+                        <p className="text-sm break-words whitespace-pre-wrap mb-1"><WhatsappFormattedText text={message.caption} /></p>
                       )}
 
                       {displayMessageContent && (
-                        <p className="text-sm break-words whitespace-pre-wrap">
-                          {displayMessageContent}
-                        </p>
+                        <p className="text-sm break-words whitespace-pre-wrap"><WhatsappFormattedText text={displayMessageContent} /></p>
                       )}
 
                       {(message.origin === 'meta_business_agent' || message.origin === 'other_app' || message.passive) && (
@@ -1037,7 +1019,7 @@ export function MessageView({
                           {message.passive && <span title="A copy received while another application held control">Standby copy</span>}
                         </div>
                       )}
-                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      <div className="mt-1 flex flex-wrap items-center justify-end gap-1.5">
                         <span className="text-[11px] tabular-nums text-muted-foreground">
                           {formatMessageTime(message.createdAt)}
                         </span>
@@ -1075,7 +1057,7 @@ export function MessageView({
                         onClick={() => handleReplyToMessage(message)}
                         variant="ghost"
                         size="icon"
-                        className="mt-1 size-7 flex-shrink-0 text-muted-foreground opacity-100 hover:bg-[var(--chat-hover)] sm:opacity-0 sm:group-hover:opacity-100"
+                        className="mt-1 size-7 flex-shrink-0 text-muted-foreground opacity-100 hover:bg-[var(--chat-hover)] sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
                         aria-label="Reply to message"
                         title="Reply"
                       >
@@ -1087,182 +1069,27 @@ export function MessageView({
               );
             })
           )}
-          <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
 
-      <div className="border-t border-[var(--chat-border-strong)] bg-[var(--chat-toolbar)] safe-area-bottom">
-        {sendError && (
-          <div className="mx-auto flex w-full max-w-[900px] items-center gap-2 px-2.5 pt-2 sm:px-3">
-            <div role="alert" className="flex flex-1 items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              <XCircle className="h-4 w-4 flex-shrink-0" />
-              <span className="flex-1">{sendError}</span>
-              <Button
-                type="button"
-                onClick={() => setSendError(null)}
-                variant="ghost"
-                size="icon"
-                className="size-6 flex-shrink-0 text-destructive hover:bg-destructive/20"
-                aria-label="Dismiss error"
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            </div>
-          </div>
-        )}
-        {canSendRegularMessage ? (
-          <>
-            {replyingToMessage && (
-              <div className="border-b border-[var(--chat-border-strong)] bg-[var(--chat-surface)] px-3 py-2">
-                <div className="mx-auto flex w-full max-w-[900px] items-center gap-2">
-                  <Reply className="h-4 w-4 flex-shrink-0 text-primary" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-medium text-primary">
-                      Replying to {getMessageSenderLabel(replyingToMessage, contactLabel, phoneNumber)}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {getReplyPreviewContent(replyingToMessage, 140, getDisplayMessageContent(replyingToMessage))}
-                    </p>
-                  </div>
-                  <Button
-                    onClick={handleCancelReply}
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-8 flex-shrink-0 text-muted-foreground"
-                    aria-label="Cancel reply"
-                    title="Cancel reply"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {selectedFile && (
-              <div className="border-b border-[var(--chat-border-strong)] bg-[var(--chat-surface)] p-3">
-                <div className="mx-auto flex w-full max-w-[900px] items-start gap-3">
-                  {filePreview ? (
-                    <img
-                      src={filePreview}
-                      alt="Preview"
-                      className="size-16 rounded object-cover outline outline-1 [outline-color:var(--chat-media-outline)]"
-                    />
-                  ) : (
-                    <div className="flex size-16 items-center justify-center rounded bg-[var(--chat-hover)]">
-                      <Paperclip className="h-6 w-6 text-muted-foreground" />
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">
-                      {selectedFile.name}
-                    </p>
-                    <p className="text-xs tabular-nums text-muted-foreground">
-                      {(selectedFile.size / 1024).toFixed(1)} KB
-                    </p>
-                  </div>
-                  <Button
-                    onClick={handleRemoveFile}
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-11 text-muted-foreground md:size-10"
-                    aria-label="Remove selected file"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
-
-
-
-            <form
-              onSubmit={handleSendMessage}
-              className="mx-auto flex w-full max-w-[900px] items-end gap-1.5 px-2.5 py-2 sm:gap-2 sm:p-3"
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                onChange={handleFileSelect}
-                accept="image/*,video/*,audio/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                className="hidden"
-              />
-              <Button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={sending}
-                variant="ghost"
-                size="icon"
-                className="size-11 text-muted-foreground hover:bg-[var(--chat-icon-hover)] md:size-10"
-                aria-label="Upload file"
-                title="Upload file"
-              >
-                <Paperclip className="h-5 w-5" />
-              </Button>
-              <Button
-                type="button"
-                onClick={() => setShowInteractiveDialog(true)}
-                disabled={sending}
-                size="icon"
-                variant="ghost"
-                className="size-11 text-muted-foreground hover:bg-[var(--chat-hover)] hover:text-primary md:size-10"
-                aria-label="Send interactive message"
-                title="Send interactive message"
-              >
-                <ListTree className="h-5 w-5" />
-              </Button>
-              <Input
-                ref={messageInputRef}
-                type="text"
-                value={messageInput}
-                onChange={(e) => {
-                  setMessageInput(e.target.value);
-                  if (sendError) setSendError(null);
-                }}
-                placeholder="Type a message"
-                disabled={sending}
-                aria-label="Message"
-                className="h-11 min-w-0 flex-1 rounded-lg border-[var(--chat-border-strong)] bg-[var(--chat-input)] text-base focus-visible:ring-primary md:h-10 md:text-sm"
-              />
-              <Button
-                type="submit"
-                disabled={sending || !recipientAddress || (!messageInput.trim() && !selectedFile)}
-                size="icon"
-                className="size-11 rounded-full bg-primary hover:bg-[var(--primary-hover)] md:size-10"
-                aria-label={sending ? "Sending message" : "Send message"}
-              >
-                {sending ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <Send className="h-5 w-5" />
-                )}
-              </Button>
-            </form>
-          </>
-        ) : (
-          <div className="mx-auto w-full max-w-[900px] p-3">
-            <div className="bg-[var(--chat-warning-background)] border border-[var(--chat-warning-border)] rounded-lg p-4">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 text-[var(--chat-warning-foreground)] flex-shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-foreground mb-3">
-                    {getDisabledInputMessage(messages, lastInboundAt)}
-                  </p>
-                  <Button
-                    onClick={() => setShowTemplateDialog(true)}
-                    className="h-11 bg-primary hover:bg-[var(--primary-hover)] md:h-9"
-                    size="sm"
-                  >
-                    <MessageSquare className="h-4 w-4 mr-2" />
-                    Send template
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+      {!isNearBottom && messages.length > 0 && <div className="pointer-events-none absolute bottom-32 left-0 right-0 flex justify-center"><Button type="button" variant="secondary" size="sm" className="pointer-events-auto gap-1 rounded-full border shadow-sm" onClick={() => { setIsNearBottom(true); scrollToBottom(); }}><ArrowDown className="size-3.5" />Latest messages</Button></div>}
+      <div className="bg-[var(--chat-canvas)] px-3 pb-2.5 pt-2.5 safe-area-bottom">
+        <div className="mx-auto w-full max-w-2xl">
+          {sendError && <div role="alert" className="mb-2 flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"><XCircle className="size-4 shrink-0" /><span className="flex-1">{sendError}</span><Button type="button" onClick={() => setSendError(null)} variant="ghost" size="icon" className="size-6" aria-label="Dismiss error"><X className="size-3" /></Button></div>}
+          {canSendRegularMessage ? <MessageComposer
+            value={messageInput} onChange={value => { setMessageInput(value); if (sendError) setSendError(null); }} inputRef={messageInputRef}
+            onSubmit={handleSendMessage} sending={sending} canSend={!!recipientAddress && (!!messageInput.trim() || !!selectedFile)}
+            selectedFile={selectedFile} filePreview={filePreview} onSelectFile={handleFileSelect} onRemoveFile={handleRemoveFile}
+            reply={replyingToMessage} contactLabel={contactLabel} onCancelReply={handleCancelReply}
+            onInteractive={() => setShowInteractiveDialog(true)} onTemplate={() => setShowTemplateDialog(true)}
+          /> : <div className="flex items-start gap-3 rounded-lg border border-[var(--chat-warning-border)] bg-[var(--chat-warning-background)] p-3"><AlertCircle className="mt-0.5 size-4 shrink-0 text-[var(--chat-warning-foreground)]" /><div className="min-w-0 flex-1"><p className="mb-2 text-xs leading-5">{getDisabledInputMessage(messages, lastInboundAt)}</p><Button onClick={() => setShowTemplateDialog(true)} type="button" size="sm" className="h-8 gap-1.5 text-xs"><MessageSquare className="size-3.5" />Send template</Button></div></div>}
+        </div>
       </div>
+      </div>
+      {showDetails && <ConversationDetails identity={identity} conversations={conversations} phoneNumberId={phoneNumberId} inboxPhoneNumber={inboxPhoneNumber} inboxDisplayName={inboxDisplayName} canReply={canSendRegularMessage} onClose={() => setShowDetails(false)} onJump={handleJumpToConversation} />}
+      <Dialog open={showStatusDialog} onOpenChange={open => { if (!isUpdatingStatus) setShowStatusDialog(open); }}>
+        <DialogContent><DialogHeader><DialogTitle>{nextStatus === 'ended' ? 'Close conversation?' : 'Reopen conversation?'}</DialogTitle><DialogDescription>{nextStatus === 'ended' ? 'Mark this conversation as closed in Kapso. You can reopen it later.' : 'Move this conversation back to the Active list in Kapso.'}</DialogDescription></DialogHeader>{statusError && <p role="alert" className="text-sm text-destructive">{statusError}</p>}<DialogFooter><Button type="button" variant="outline" disabled={isUpdatingStatus} onClick={() => setShowStatusDialog(false)}>Cancel</Button><Button type="button" variant={nextStatus === 'ended' ? 'destructive' : 'default'} disabled={isUpdatingStatus} onClick={handleUpdateStatus}>{isUpdatingStatus && <Loader2 className="mr-2 size-3.5 animate-spin" />}{nextStatus === 'ended' ? 'Close conversation' : 'Reopen conversation'}</Button></DialogFooter></DialogContent>
+      </Dialog>
       <TemplateSelectorDialog
         open={showTemplateDialog}
         onOpenChange={setShowTemplateDialog}

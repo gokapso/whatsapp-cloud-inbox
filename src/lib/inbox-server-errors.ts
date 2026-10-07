@@ -1,7 +1,11 @@
 import { GraphApiError } from '@kapso/whatsapp-cloud-api';
-import { InboxInputError, readErrorRecord, readErrorString, type InboxErrorDetails } from './inbox-errors';
+import { InboxInputError, InboxRequestError, readErrorRecord, readErrorString, type InboxErrorDetails } from './inbox-errors';
 
 export function inboxErrorResponse(error: unknown, statusOverride?: number): Response {
+  if (error instanceof InboxRequestError) {
+    const headers = error.details.retryAfterMs === undefined ? undefined : { 'Retry-After': String(Math.ceil(error.details.retryAfterMs / 1000)) };
+    return Response.json(error.details, { status: statusOverride ?? error.status, headers });
+  }
   const graph = error instanceof GraphApiError ? error : undefined;
   const body = readErrorRecord(graph?.raw);
   const provider = readErrorRecord(body.error);

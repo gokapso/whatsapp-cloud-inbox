@@ -65,6 +65,20 @@ Open [http://localhost:4000/settings](http://localhost:4000/settings) to choose 
 
 ## Key Features
 
+### Kapso-style Inbox
+
+- Compact conversation list, consistent contact avatars, centered timeline, and a multiline composer in light and dark mode.
+- Bold, italic, strikethrough, and code formatting. Enter sends; Shift+Enter inserts a new line. Cmd/Ctrl+B and Cmd/Ctrl+I format selected text.
+- Attach files with the picker, paste, or drag and drop. Rejected sends retain the draft, attachment, and quoted reply.
+- Recent history loads across sessions automatically, up to three pages while fewer than 50 messages are loaded. Older history remains explicitly paginated; polling refreshes the newest page.
+- Contact details show the available identity, business number, reply window, and loaded conversation history.
+- New conversations start with an approved template, addressed to a phone number or BSUID.
+- Close and reopen conversations through the public Kapso Platform API, after checking the selected business number. These actions update the conversation in Kapso.
+- Render WhatsApp formatting, Flow responses, locations, orders, shared contacts, and interactive message options.
+- Filter loaded conversations by business number, status, and search.
+
+Per-user unread state, team assignment controls, agent/automation controls, AI drafting, and voice recording are not implemented in this release. The standalone app does not use Kapso's private signed-in Inbox endpoints. Closing a conversation is independent of WhatsApp's 24-hour messaging window.
+
 ### Template Messages
 
 Send WhatsApp-approved templates with dynamic parameters:
