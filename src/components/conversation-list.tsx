@@ -449,9 +449,11 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
                     }}
                     className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium text-foreground hover:bg-[var(--chat-hover)]"
                   >
+                    <span aria-hidden="true" className="flex size-3.5 shrink-0 items-center justify-center">
+                      {statusFilter === filter.value && <Check className="size-3.5 text-[var(--chat-presence)]" />}
+                    </span>
                     <span className="flex-1">{filter.label}</span>
                     <span className="text-[10px] tabular-nums text-muted-foreground">{threadCounts[filter.value]}</span>
-                    {statusFilter === filter.value && <Check className="size-3.5 text-[var(--chat-presence)]" />}
                   </button>
                 ))}
               </div>
@@ -486,7 +488,10 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
                   <button key={number.id} type="button" role="menuitemradio" aria-checked={selectedNumberId === number.id}
                     onClick={() => { setSelectedNumberId(number.id); setIsFilterMenuOpen(false); }}
                     className="flex min-h-8 w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-muted">
-                    <span className="min-w-0 flex-1 truncate">{number.label}</span>{selectedNumberId === number.id && <Check className="size-3.5 shrink-0" />}
+                    <span aria-hidden="true" className="flex size-3.5 shrink-0 items-center justify-center">
+                      {selectedNumberId === number.id && <Check className="size-3.5" />}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{number.label}</span>
                   </button>
                 ))}
               </div>
