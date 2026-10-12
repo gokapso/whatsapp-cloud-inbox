@@ -1073,7 +1073,7 @@ export function MessageView({
       </ScrollArea>
 
       {!isNearBottom && messages.length > 0 && <div className="pointer-events-none absolute bottom-32 left-0 right-0 flex justify-center"><Button type="button" variant="secondary" size="sm" className="pointer-events-auto gap-1 rounded-full border shadow-sm" onClick={() => { setIsNearBottom(true); scrollToBottom(); }}><ArrowDown className="size-3.5" />Latest messages</Button></div>}
-      <div className="bg-[var(--chat-canvas)] px-3 pb-2.5 pt-2.5 safe-area-bottom">
+      <div className="bg-[var(--chat-canvas)] px-3 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-2.5">
         <div className="mx-auto w-full max-w-2xl">
           {sendError && <div role="alert" className="mb-2 flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"><XCircle className="size-4 shrink-0" /><span className="flex-1">{sendError}</span><Button type="button" onClick={() => setSendError(null)} variant="ghost" size="icon" className="size-6" aria-label="Dismiss error"><X className="size-3" /></Button></div>}
           {canSendRegularMessage ? <MessageComposer
