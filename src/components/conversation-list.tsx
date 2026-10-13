@@ -2,26 +2,31 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
+import { useConversations } from '@/hooks/use-conversations';
+import { useCachedMessageStatuses } from '@/hooks/use-cached-message-statuses';
+import { messageStatusKey } from '@/lib/cached-message-status';
+import { getIdentityLabel, getIdentitySecondaryLabel } from '@/lib/whatsapp-identity';
+import { getInboxErrorMessage } from '@/lib/inbox-errors';
 import { differenceInDays, differenceInHours, differenceInMinutes, format, isValid, isYesterday } from 'date-fns';
-import { Bell, BellOff, Check, ChevronDown, Plus, RefreshCw, Search, Settings } from 'lucide-react';
+import { Bell, BellOff, Check, ChevronDown, Plus, RefreshCw, Search, Settings, SquarePen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
-  CONVERSATIONS_QUERY_KEY,
   type ConversationThread,
   type ConversationStatusFilter,
   countThreadsByStatus,
-  fetchConversations,
   filterConversationThreads,
   groupConversationsByPhoneNumber,
+  parseTimestamp,
   shortConversationId,
 } from '@/lib/inbox-data';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { ContactAvatar } from '@/components/contact-avatar';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { NewConversationDialog } from '@/components/new-conversation-dialog';
+import { MessageStatusChecks } from '@/components/message-status-checks';
 
 function formatConversationDate(timestamp?: string): string {
   if (!timestamp) return '';
@@ -48,35 +53,11 @@ function formatConversationDate(timestamp?: string): string {
   }
 }
 
-function getAvatarInitials(contactName?: string, phoneNumber?: string): string {
-  if (contactName) {
-    const words = contactName.trim().split(/\s+/);
-    if (words.length >= 2) {
-      return (words[0][0] + words[1][0]).toUpperCase();
-    }
-    return contactName.slice(0, 2).toUpperCase();
-  }
-
-  if (phoneNumber) {
-    const digits = phoneNumber.replace(/\D/g, '');
-    return digits.slice(-2);
-  }
-
-  return '??';
-}
-
 const STATUS_FILTERS: Array<{ value: ConversationStatusFilter; label: string }> = [
   { value: 'active', label: 'Active' },
-  { value: 'ended', label: 'Ended' },
+  { value: 'ended', label: 'Closed' },
   { value: 'all', label: 'All' },
 ];
-
-const FILTER_MENU_ITEMS = [
-  { label: 'Assignee', disabled: true },
-  { label: 'Phone number', action: 'phone-number' },
-  { label: 'Unread', disabled: true },
-  { label: 'Handoff', disabled: true },
-] as const;
 
 const NOTIFICATIONS_STORAGE_KEY = 'whatsapp-cloud-inbox-notifications-enabled';
 
@@ -88,12 +69,6 @@ type ThreadNotificationSnapshot = {
   lastMessageContent?: string;
   lastMessageDirection?: string;
 };
-
-function parseTimestamp(timestamp?: string): number {
-  if (!timestamp) return 0;
-  const time = Date.parse(timestamp);
-  return Number.isFinite(time) ? time : 0;
-}
 
 function getThreadNotificationSnapshot(thread: ConversationThread): ThreadNotificationSnapshot {
   return {
@@ -140,7 +115,10 @@ type Props = {
 };
 
 export function ConversationList({ onSelectThread, selectedThreadKey, isHidden = false }: Props) {
+  const messageStatuses = useCachedMessageStatuses();
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedNumberId, setSelectedNumberId] = useState('');
+  const [showNewConversation, setShowNewConversation] = useState(false);
   const [statusFilter, setStatusFilter] = useState<ConversationStatusFilter>('active');
   const [refreshing, setRefreshing] = useState(false);
   const [isStatusMenuOpen, setIsStatusMenuOpen] = useState(false);
@@ -153,16 +131,17 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
   const hasInitializedNotificationSnapshotsRef = useRef(false);
 
   const {
-    data: conversations = [],
+    conversations,
+    headConversationIds,
+    partialErrors,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
     error,
     isPending,
     isFetching,
     refetch,
-  } = useQuery({
-    queryKey: CONVERSATIONS_QUERY_KEY,
-    queryFn: fetchConversations,
-    refetchInterval: 10_000,
-  });
+  } = useConversations();
 
   const threads = useMemo(
     () => groupConversationsByPhoneNumber(conversations),
@@ -175,8 +154,8 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
   );
 
   const filteredThreads = useMemo(
-    () => filterConversationThreads(threads, statusFilter, searchQuery),
-    [threads, statusFilter, searchQuery],
+    () => filterConversationThreads(threads, statusFilter, searchQuery).filter(thread => !selectedNumberId || thread.phoneNumberId === selectedNumberId),
+    [threads, statusFilter, searchQuery, selectedNumberId],
   );
 
   const handleRefresh = async () => {
@@ -244,6 +223,7 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
   }, []);
 
   useEffect(() => {
+    if (isPending) return;
     const currentSnapshots = new Map(
       threads.map((thread) => [thread.key, getThreadNotificationSnapshot(thread)]),
     );
@@ -263,11 +243,11 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
           return;
         }
 
-        if (!shouldNotifyForThread(thread, previousThreadSnapshotsRef.current.get(thread.key))) {
+        if (!headConversationIds.has(thread.latestConversation.id) || !shouldNotifyForThread(thread, previousThreadSnapshotsRef.current.get(thread.key))) {
           return;
         }
 
-        const title = thread.contactName || thread.phoneNumber || 'New WhatsApp message';
+        const title = getIdentityLabel(thread);
         const body = thread.lastMessage?.content || 'New message received';
         const notification = new Notification(title, {
           body,
@@ -283,7 +263,7 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
     }
 
     previousThreadSnapshotsRef.current = currentSnapshots;
-  }, [notificationPermission, notificationsEnabled, onSelectThread, selectedThreadKey, threads]);
+  }, [headConversationIds, isPending, notificationPermission, notificationsEnabled, onSelectThread, selectedThreadKey, threads]);
 
   useEffect(() => {
     if (!isStatusMenuOpen && !isFilterMenuOpen) return;
@@ -325,11 +305,11 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
   if (isPending) {
     return (
       <div className={cn(
-        "flex min-h-0 w-full min-w-0 flex-col border-[var(--chat-border-strong)] bg-[var(--chat-surface)] md:w-[22rem] md:flex-none md:border-r lg:w-[24rem] xl:w-[26rem]",
+        "flex min-h-0 w-full min-w-0 flex-col border-[var(--chat-border-strong)] bg-[var(--chat-canvas)] md:w-72 md:flex-none md:border-r lg:w-80",
         isHidden && "hidden md:flex"
       )}>
         <div className="border-b border-[var(--chat-border-strong)] bg-[var(--chat-toolbar)] px-3 py-3 safe-area-top">
-          <div className="mb-3 flex items-center justify-between pt-1">
+          <div className="mb-2 flex items-center justify-between">
             <Skeleton className="h-6 w-20" />
             <div className="flex items-center gap-2">
               <Skeleton className="size-8" />
@@ -360,23 +340,24 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
 
   return (
     <div className={cn(
-      "flex min-h-0 w-full min-w-0 flex-col border-[var(--chat-border-strong)] bg-[var(--chat-surface)] md:w-[22rem] md:flex-none md:border-r lg:w-[24rem] xl:w-[26rem]",
+      "flex min-h-0 w-full min-w-0 flex-col border-[var(--chat-border-strong)] bg-[var(--chat-canvas)] md:w-72 md:flex-none md:border-r lg:w-80",
       isHidden && "hidden md:flex"
     )}>
       <div ref={controlsRef} className="border-b border-[var(--chat-border-strong)] bg-[var(--chat-toolbar)] px-3 py-3 safe-area-top">
-        <div className="mb-3 flex items-center justify-between pt-1">
+        <div className="mb-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h1 className="text-lg font-semibold text-foreground">Inbox</h1>
-            {isFetching && (
+            {!error && !isPending && (
               <div
-                className="h-2 w-2 rounded-full bg-[var(--chat-presence)] animate-pulse"
-                title="Auto-updating"
+                className="h-2 w-2 rounded-full bg-[var(--chat-presence)]"
+                title="Updated automatically every 10 seconds"
                 role="status"
-                aria-label="Auto-updating conversations"
+                aria-label={isFetching ? "Updating conversations" : "Automatic updates enabled"}
               />
             )}
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-0">
+            <Button type="button" variant="ghost" size="icon" className="size-8 text-muted-foreground" aria-label="New conversation" title="New conversation" onClick={() => setShowNewConversation(true)}><SquarePen className="size-4" /></Button>
             <Button
               type="button"
               onClick={handleNotificationsClick}
@@ -431,8 +412,8 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search phone numbers..."
-            aria-label="Search phone numbers"
+            placeholder="Search conversations…"
+            aria-label="Search conversations"
             className="h-9 rounded-md border-[var(--chat-border-strong)] bg-[var(--chat-input)] pl-9 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-primary"
           />
         </div>
@@ -472,9 +453,11 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
                     }}
                     className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs font-medium text-foreground hover:bg-[var(--chat-hover)]"
                   >
+                    <span aria-hidden="true" className="flex size-3.5 shrink-0 items-center justify-center">
+                      {statusFilter === filter.value && <Check className="size-3.5 text-[var(--chat-presence)]" />}
+                    </span>
                     <span className="flex-1">{filter.label}</span>
                     <span className="text-[10px] tabular-nums text-muted-foreground">{threadCounts[filter.value]}</span>
-                    {statusFilter === filter.value && <Check className="size-3.5 text-[var(--chat-presence)]" />}
                   </button>
                 ))}
               </div>
@@ -495,7 +478,7 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
               aria-expanded={isFilterMenuOpen}
             >
               <Plus className="size-3.5" />
-              Filter
+              {selectedNumberId ? 'Number' : 'Filter'}
             </Button>
 
             {isFilterMenuOpen && (
@@ -504,24 +487,15 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
                 aria-label="Additional filters"
                 className="absolute left-0 top-[calc(100%+0.25rem)] z-50 w-44 rounded-md border border-[var(--chat-border-strong)] bg-popover p-1 text-sm text-popover-foreground shadow-lg"
               >
-                {FILTER_MENU_ITEMS.map((item) => (
-                  <button
-                    key={item.label}
-                    type="button"
-                    role="menuitem"
-                    disabled={'disabled' in item && item.disabled}
-                    onClick={() => {
-                      if ('action' in item && item.action === 'phone-number') {
-                        searchInputRef.current?.focus();
-                      }
-                      setIsFilterMenuOpen(false);
-                    }}
-                    className={cn(
-                      'flex h-8 w-full items-center rounded px-2 text-left text-xs font-medium text-foreground hover:bg-[var(--chat-hover)]',
-                      'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent'
-                    )}
-                  >
-                    {item.label}
+                <p className="px-2 py-1 text-[10px] text-muted-foreground">Business number</p>
+                {[{ id: '', label: 'All numbers' }, ...Array.from(new Map(threads.map(thread => [thread.phoneNumberId, { id: thread.phoneNumberId, label: thread.inboxDisplayName || thread.inboxPhoneNumber || thread.phoneNumberId }])).values())].map(number => (
+                  <button key={number.id} type="button" role="menuitemradio" aria-checked={selectedNumberId === number.id}
+                    onClick={() => { setSelectedNumberId(number.id); setIsFilterMenuOpen(false); }}
+                    className="flex min-h-8 w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-muted">
+                    <span aria-hidden="true" className="flex size-3.5 shrink-0 items-center justify-center">
+                      {selectedNumberId === number.id && <Check className="size-3.5" />}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{number.label}</span>
                   </button>
                 ))}
               </div>
@@ -530,14 +504,25 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
         </div>
       </div>
 
+      {error && conversations.length > 0 && (
+        <p role="alert" className="p-3 text-xs text-destructive">{getInboxErrorMessage(error, 'Could not refresh conversations')}</p>
+      )}
+      {partialErrors.length > 0 && (
+        <div role="alert" className="border-b border-[var(--chat-border)] p-3 text-xs text-destructive">
+          Some numbers could not be loaded. Refresh or load more to retry.
+          {[...new Map(partialErrors.map(error => [error.phoneNumberId, error])).values()].map(error => (
+            <p key={error.phoneNumberId}>{error.phoneNumberId}: {error.error}</p>
+          ))}
+        </div>
+      )}
       <ScrollArea className="h-0 flex-1 overflow-hidden overscroll-contain">
-        {error ? (
+        {error && conversations.length === 0 ? (
           <div className="p-4 text-center text-sm text-destructive">
-            Failed to load conversations
+            {getInboxErrorMessage(error, 'Failed to load conversations')}
           </div>
         ) : filteredThreads.length === 0 ? (
           <div className="p-4 text-center text-muted-foreground">
-            {searchQuery ? 'No phone numbers found' : 'No conversations found'}
+            {searchQuery ? 'No contacts found in loaded conversations' : 'No conversations found'}
           </div>
         ) : (
           <div className="w-full overflow-hidden">
@@ -546,38 +531,31 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
                 key={thread.key}
                 onClick={() => onSelectThread(thread)}
                 className={cn(
-                  'relative min-h-[68px] w-full touch-manipulation overflow-hidden border-b border-[var(--chat-border)] px-3 py-2 text-left transition-colors hover:bg-[var(--chat-hover)]',
-                  selectedThreadKey === thread.key && 'bg-[var(--chat-hover)]'
+                  'relative min-h-[68px] w-full touch-manipulation overflow-hidden px-3 py-2.5 text-left transition-colors hover:bg-[var(--chat-surface)] focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2',
+                  selectedThreadKey === thread.key && 'bg-[var(--chat-surface)]'
                 )}
               >
                 <div className="flex items-start gap-3 overflow-hidden">
-                  <Avatar className="mt-0.5 size-9 flex-shrink-0">
-                    <AvatarFallback className="bg-cyan-100 text-xs font-semibold text-cyan-950">
-                      {getAvatarInitials(thread.contactName, thread.phoneNumber)}
-                    </AvatarFallback>
-                  </Avatar>
+                  <ContactAvatar label={getIdentityLabel(thread)} className="mt-1 size-6" />
                   <div className="flex min-w-0 flex-1 items-start justify-between gap-2 overflow-hidden">
                     <div className="min-w-0 flex-1 overflow-hidden">
-                      <p className="truncate text-sm font-semibold leading-5 text-foreground">
-                        {thread.contactName || thread.phoneNumber || 'Unknown phone number'}
+                      <p className="truncate text-sm font-medium leading-5 text-foreground">
+                        {getIdentityLabel(thread)}
                       </p>
                       {thread.lastMessage && (
-                        <p className="truncate text-xs leading-4 text-muted-foreground">
+                        <p className="flex items-center gap-1 text-xs leading-4 text-muted-foreground">
                           {thread.lastMessage.direction === 'outbound' && (
-                            <span className="text-[var(--chat-check)]">✓ </span>
+                            <MessageStatusChecks className="shrink-0" status={thread.lastMessage.id ? messageStatuses.get(messageStatusKey(thread.phoneNumberId, thread.lastMessage.id)) ?? 'outgoing' : 'outgoing'} />
                           )}
-                          {thread.lastMessage.content}
+                          <span className="min-w-0 truncate">{thread.lastMessage.content}</span>
                         </p>
                       )}
                       <p className="truncate text-[11px] leading-4 text-muted-foreground/80">
-                        {thread.phoneNumber}
-                        {(thread.inboxDisplayName || thread.inboxPhoneNumber) &&
-                          ` · via ${thread.inboxDisplayName || thread.inboxPhoneNumber}`}
-                        {thread.conversationCount > 1 && ` · ${thread.conversationCount} conversations`}
+                        {thread.inboxDisplayName || thread.inboxPhoneNumber || getIdentitySecondaryLabel(thread)}
                       </p>
                     </div>
                     <div className="ml-2 flex flex-shrink-0 flex-col items-end gap-2 pt-1">
-                      <span className="text-xs font-semibold tabular-nums text-foreground">
+                      <span className="text-[10px] tabular-nums text-muted-foreground">
                         {formatConversationDate(thread.lastActiveAt)}
                       </span>
                       <span
@@ -594,7 +572,16 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
             ))}
           </div>
         )}
+        {hasNextPage && (
+          <div className="p-3 text-center">
+            <Button variant="outline" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()}>
+              {isFetchingNextPage ? 'Loading conversations…' : 'Load more conversations'}
+            </Button>
+            <p className="mt-2 text-xs text-muted-foreground">Search and counts cover loaded conversations.</p>
+          </div>
+        )}
       </ScrollArea>
+      <NewConversationDialog open={showNewConversation} onOpenChange={setShowNewConversation} onSent={() => { void refetch(); }} />
     </div>
   );
 }

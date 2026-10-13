@@ -1,3 +1,4 @@
+import { readRecipientAddress } from '@/lib/message-recipient';
 import { NextResponse } from 'next/server';
 import { buildTemplateSendPayload } from '@kapso/whatsapp-cloud-api';
 import { configurationErrorResponse, resolvePhoneNumberContext } from '@/lib/inbox-settings';
@@ -15,13 +16,15 @@ type ButtonTextParameter = { type: 'text'; text: string; parameter_name?: string
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { to, templateName, languageCode, parameters, parameterInfo, phoneNumberId: requestedPhoneNumberId } = body;
+    const { to, recipient, templateName, languageCode, parameters, parameterInfo, phoneNumberId: requestedPhoneNumberId } = body;
     const phoneNumber = await resolvePhoneNumberContext(requestedPhoneNumberId);
     const phoneNumberId = phoneNumber.phone_number_id;
 
-    if (!to || !templateName || !languageCode) {
+    const recipientAddress = readRecipientAddress({ to, recipient });
+
+    if (!templateName || !languageCode) {
       return NextResponse.json(
-        { error: 'Missing required fields: to, templateName, languageCode' },
+        { error: 'Missing required fields: templateName, languageCode' },
         { status: 400 }
       );
     }
@@ -114,7 +117,7 @@ export async function POST(request: Request) {
     // Send template message
     const result = await whatsappClient.messages.sendTemplate({
       phoneNumberId,
-      to,
+      ...recipientAddress,
       template: templatePayload
     });
 

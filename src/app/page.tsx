@@ -1,69 +1,52 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useConversations } from '@/hooks/use-conversations';
 import { ConversationList } from '@/components/conversation-list';
 import { MessageView } from '@/components/message-view';
 import {
-  CONVERSATIONS_QUERY_KEY,
   type ConversationThread,
-  fetchConversations,
   groupConversationsByPhoneNumber,
 } from '@/lib/inbox-data';
 
 export default function Home() {
-  const [selectedThreadKey, setSelectedThreadKey] = useState<string>();
-  const queryClient = useQueryClient();
+  const [selection, setSelection] = useState<{ key: string; conversationId: string }>();
 
-  const { data: conversations = [] } = useQuery({
-    queryKey: CONVERSATIONS_QUERY_KEY,
-    queryFn: fetchConversations,
-  });
+  const { conversations, refetch } = useConversations();
 
   const threads = useMemo(
     () => groupConversationsByPhoneNumber(conversations),
     [conversations],
   );
 
-  const selectedThread = selectedThreadKey
-    ? threads.find(thread => thread.key === selectedThreadKey)
+  const selectedThread = selection
+    ? threads.find(thread => thread.key === selection.key) ||
+      threads.find(thread => thread.conversations.some(conversation => conversation.id === selection.conversationId))
     : undefined;
 
   const handleSelectThread = (thread: ConversationThread) => {
-    setSelectedThreadKey(thread.key);
+    setSelection({ key: thread.key, conversationId: thread.latestConversation.id });
   };
 
-  const handleTemplateSent = async (phoneNumber: string, phoneNumberId?: string) => {
-    const refreshedConversations = await queryClient.fetchQuery({
-      queryKey: CONVERSATIONS_QUERY_KEY,
-      queryFn: fetchConversations,
-      staleTime: 0,
-    });
-    const phoneNumberKey = phoneNumber.replace(/\D/g, '') || phoneNumber;
-    const refreshedThread = groupConversationsByPhoneNumber(refreshedConversations)
-      .find(thread =>
-        (!phoneNumberId || thread.phoneNumberId === phoneNumberId) &&
-        (thread.key.endsWith(`:${phoneNumberKey}`) || thread.phoneNumber === phoneNumber)
-      );
-
-    setSelectedThreadKey(refreshedThread?.key ?? (phoneNumberId ? `${phoneNumberId}:${phoneNumberKey}` : phoneNumberKey));
-  };
-
-  const handleBackToList = () => {
-    setSelectedThreadKey(undefined);
-  };
+  const handleTemplateSent = async () => { await refetch({ throwOnError: true }); };
+  const handleBackToList = () => { setSelection(undefined); };
 
   return (
     <div className="flex h-dvh min-h-dvh w-full overflow-hidden bg-background text-foreground">
       <ConversationList
         onSelectThread={handleSelectThread}
-        selectedThreadKey={selectedThreadKey}
+        selectedThreadKey={selectedThread?.key}
         isHidden={!!selectedThread}
       />
       <MessageView
+        key={selection?.conversationId ?? 'empty'}
         conversationId={selectedThread?.latestConversation.id}
         conversations={selectedThread?.conversations || []}
         phoneNumber={selectedThread?.phoneNumber}
+        businessScopedUserId={selectedThread?.businessScopedUserId ?? undefined}
+        parentBusinessScopedUserId={selectedThread?.parentBusinessScopedUserId ?? undefined}
+        username={selectedThread?.username ?? undefined}
+        lastInboundAt={selectedThread?.lastInboundAt}
         phoneNumberId={selectedThread?.phoneNumberId}
         inboxPhoneNumber={selectedThread?.inboxPhoneNumber}
         inboxDisplayName={selectedThread?.inboxDisplayName}

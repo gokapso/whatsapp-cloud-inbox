@@ -1,5 +1,8 @@
 'use client';
 
+import { getIdentityLabel, getRecipientAddress, type WhatsappIdentity } from '@/lib/whatsapp-identity';
+import { getInboxErrorMessage, readInboxResponse } from '@/lib/inbox-errors';
+
 import { useCallback, useEffect, useState } from 'react';
 import { Send, Loader2 } from 'lucide-react';
 import {
@@ -20,12 +23,12 @@ import { TemplateParametersDialog } from './template-parameters-dialog';
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  phoneNumber: string;
+  identity: WhatsappIdentity;
   phoneNumberId?: string;
   onTemplateSent?: () => void;
 };
 
-export function TemplateSelectorDialog({ open, onOpenChange, phoneNumber, phoneNumberId, onTemplateSent }: Props) {
+export function TemplateSelectorDialog({ open, onOpenChange, identity, phoneNumberId, onTemplateSent }: Props) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState<string | null>(null);
@@ -87,6 +90,9 @@ export function TemplateSelectorDialog({ open, onOpenChange, phoneNumber, phoneN
   };
 
   const handleSendTemplateWithoutParameters = async (template: Template) => {
+    const address = getRecipientAddress(identity);
+    if (!address) { setError('This contact has no available recipient identifier'); return; }
+
     setSending(template.id);
     setError(null);
     try {
@@ -94,23 +100,20 @@ export function TemplateSelectorDialog({ open, onOpenChange, phoneNumber, phoneN
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          to: phoneNumber,
+          ...address,
           phoneNumberId,
           templateName: template.name,
           languageCode: template.language
         })
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to send template');
-      }
+      await readInboxResponse(response);
 
       onOpenChange(false);
       onTemplateSent?.();
     } catch (err) {
       console.error('Error sending template:', err);
-      setError(err instanceof Error ? err.message : 'Failed to send template');
+      setError(getInboxErrorMessage(err, 'Failed to send template'));
     } finally {
       setSending(null);
     }
@@ -150,7 +153,7 @@ export function TemplateSelectorDialog({ open, onOpenChange, phoneNumber, phoneN
         <DialogHeader>
           <DialogTitle>Send template message</DialogTitle>
           <DialogDescription>
-            Select a template to send to {phoneNumber}
+            Select a template to send to {getIdentityLabel(identity)}
           </DialogDescription>
         </DialogHeader>
 
@@ -228,7 +231,7 @@ export function TemplateSelectorDialog({ open, onOpenChange, phoneNumber, phoneN
         onOpenChange={setShowParametersDialog}
         template={selectedTemplate}
         parameterInfo={parameterInfo}
-        phoneNumber={phoneNumber}
+        identity={identity}
         phoneNumberId={phoneNumberId}
         onBack={handleBackToTemplateSelector}
         onTemplateSent={handleTemplateWithParametersSent}

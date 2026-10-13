@@ -87,8 +87,8 @@
   --whatsapp-bubble-outgoing: hsl(142 76% 90%);
   --primary-hover: hsl(142.1 76.2% 31%);
   --chat-surface: hsl(0 0% 100%);
-  --chat-toolbar: hsl(210 20% 98%);
-  --chat-canvas: hsl(210 20% 98%);
+  --chat-toolbar: hsl(0 0% 100%);
+  --chat-canvas: hsl(0 0% 100%);
   --chat-border: hsl(220 13% 91%);
   --chat-border-strong: hsl(240 5.9% 90%);
   --chat-hover: hsl(240 4.8% 95.9%);
@@ -99,6 +99,8 @@
   --chat-avatar: hsl(220 13% 91%);
   --chat-check: hsl(142.1 76.2% 36.3%);
   --chat-presence: hsl(142.1 76.2% 36.3%);
+  --chat-send: hsl(142 55% 32%);
+  --chat-send-hover: hsl(142 55% 27%);
   --chat-warning-background: hsl(38 92% 50% / 14%);
   --chat-warning-border: hsl(38 92% 50% / 35%);
   --chat-warning-foreground: hsl(30 80% 25%);
@@ -140,7 +142,7 @@
   --sidebar-ring: hsl(142.4 71.8% 29.2%);
   --primary-hover: hsl(142.1 70.6% 39%);
   --chat-surface: hsl(24 9.8% 10%);
-  --chat-toolbar: hsl(24 9.8% 10%);
+  --chat-toolbar: hsl(20 14.3% 4.1%);
   --chat-canvas: hsl(20 14.3% 4.1%);
   --chat-border: hsl(240 3.7% 15.9%);
   --chat-border-strong: hsl(240 3.7% 20%);
@@ -152,6 +154,8 @@
   --chat-avatar: hsl(240 3.7% 15.9%);
   --chat-check: #53bdeb;
   --chat-presence: hsl(142.1 70.6% 45.3%);
+  --chat-send: hsl(142 55% 29%);
+  --chat-send-hover: hsl(142 55% 34%);
   --chat-warning-background: hsl(38 92% 55% / 14%);
   --chat-warning-border: hsl(38 92% 55% / 35%);
   --chat-warning-foreground: hsl(38 92% 75%);

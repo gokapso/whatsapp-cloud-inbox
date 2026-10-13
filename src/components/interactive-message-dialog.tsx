@@ -1,5 +1,7 @@
 'use client';
 
+import { getRecipientAddress, type WhatsappIdentity } from '@/lib/whatsapp-identity';
+import { getInboxErrorMessage, readInboxResponse } from '@/lib/inbox-errors';
 import { useState } from 'react';
 import { Send, Loader2, Plus, X } from 'lucide-react';
 import {
@@ -24,7 +26,7 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   conversationId?: string;
-  phoneNumber?: string;
+  identity: WhatsappIdentity;
   phoneNumberId?: string;
   onMessageSent?: () => void;
 };
@@ -33,7 +35,7 @@ export function InteractiveMessageDialog({
   open,
   onOpenChange,
   conversationId,
-  phoneNumber,
+  identity,
   phoneNumberId,
   onMessageSent,
 }: Props) {
@@ -89,10 +91,13 @@ export function InteractiveMessageDialog({
       return;
     }
 
-    if (!conversationId || !phoneNumber) {
+    if (!conversationId || !getRecipientAddress(identity)) {
       setError('No conversation selected');
       return;
     }
+
+    const address = getRecipientAddress(identity);
+    if (!address) { setError('This contact has no available recipient identifier'); return; }
 
     setSending(true);
     setError(null);
@@ -103,7 +108,7 @@ export function InteractiveMessageDialog({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           conversationId,
-          phoneNumber,
+          ...address,
           phoneNumberId,
           header: header.trim() || undefined,
           body: body.trim(),
@@ -114,17 +119,14 @@ export function InteractiveMessageDialog({
         }),
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to send interactive message');
-      }
+      await readInboxResponse(response);
 
       handleReset();
       onOpenChange(false);
       onMessageSent?.();
     } catch (err) {
       console.error('Error sending interactive message:', err);
-      setError(err instanceof Error ? err.message : 'Failed to send message');
+      setError(getInboxErrorMessage(err, 'Failed to send message'));
     } finally {
       setSending(false);
     }

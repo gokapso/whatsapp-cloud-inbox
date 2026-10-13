@@ -1,3 +1,4 @@
+import { readRecipientAddress } from '@/lib/message-recipient';
 import { NextResponse } from 'next/server';
 import { configurationErrorResponse, resolvePhoneNumberContext } from '@/lib/inbox-settings';
 import { whatsappClient } from '@/lib/whatsapp-client';
@@ -5,19 +6,12 @@ import { whatsappClient } from '@/lib/whatsapp-client';
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
-    const to = formData.get('to') as string;
+    const recipientAddress = readRecipientAddress({ to: formData.get('to'), recipient: formData.get('recipient') });
     const body = formData.get('body') as string;
     const file = formData.get('file') as File | null;
     const contextMessageId = (formData.get('contextMessageId') as string | null)?.trim() || undefined;
     const configuredPhoneNumber = await resolvePhoneNumberContext(formData.get('phoneNumberId') as string | undefined);
     const phoneNumberId = configuredPhoneNumber.phone_number_id;
-
-    if (!to) {
-      return NextResponse.json(
-        { error: 'Missing required field: to' },
-        { status: 400 }
-      );
-    }
 
     let result;
 
@@ -38,28 +32,28 @@ export async function POST(request: Request) {
       if (mediaType === 'image') {
         result = await whatsappClient.messages.sendImage({
           phoneNumberId,
-          to,
+          ...recipientAddress,
           contextMessageId,
           image: { id: uploadResult.id, caption: body || undefined }
         });
       } else if (mediaType === 'video') {
         result = await whatsappClient.messages.sendVideo({
           phoneNumberId,
-          to,
+          ...recipientAddress,
           contextMessageId,
           video: { id: uploadResult.id, caption: body || undefined }
         });
       } else if (mediaType === 'audio') {
         result = await whatsappClient.messages.sendAudio({
           phoneNumberId,
-          to,
+          ...recipientAddress,
           contextMessageId,
           audio: { id: uploadResult.id }
         });
       } else {
         result = await whatsappClient.messages.sendDocument({
           phoneNumberId,
-          to,
+          ...recipientAddress,
           contextMessageId,
           document: { id: uploadResult.id, caption: body || undefined, filename: file.name }
         });
@@ -68,7 +62,7 @@ export async function POST(request: Request) {
       // Send text message
       result = await whatsappClient.messages.sendText({
         phoneNumberId,
-        to,
+        ...recipientAddress,
         contextMessageId,
         body
       });
