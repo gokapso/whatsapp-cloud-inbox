@@ -118,6 +118,8 @@ For server-side contact filtering, the public [Platform Contacts API](https://do
 
 A rejected send keeps your draft and attachment. An accepted send followed by a failed history refresh shows a separate refresh warning. Sends are not automatically retried; reconcile an unknown result before trying again.
 
+Conversation previews and message bubbles use the same SVG status icons. When the exact preview message is loaded in the chat cache, its sent, delivered, read, or failed status also appears in the list, scoped to the business number. The conversation-list API does not provide delivery status, so an unloaded outgoing preview uses a single outgoing tick without claiming a delivery receipt. This uses existing cached messages and adds no message-fetch requests.
+
 This inbox does not yet provide the hosted Kapso inbox's ownership controls, team assignments, shared quick replies, contact notes, server-wide search, or full structured-message viewers. Meta-agent attribution and routing errors do not grant control of a conversation. Manage ownership in Kapso before replying to a thread controlled by another application.
 
 ## Contributing

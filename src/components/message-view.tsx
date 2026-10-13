@@ -17,7 +17,6 @@ import {
   MessageSquare,
   XCircle,
   ArrowLeft,
-  Check,
   Reply,
   Loader2,
   CheckCircle2,
@@ -51,6 +50,7 @@ import { MessageComposer } from '@/components/message-composer';
 import { ConversationDetails } from '@/components/conversation-details';
 import { WhatsappFormattedText } from '@/components/whatsapp-formatted-text';
 import { StructuredMessage } from '@/components/structured-message';
+import { MessageStatusChecks } from '@/components/message-status-checks';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 function formatMessageTime(timestamp: string): string {
@@ -100,28 +100,6 @@ function formatDisplayPhoneNumber(phoneNumber?: string): string | null {
   if (/^\d+$/.test(trimmedPhoneNumber)) return `+${trimmedPhoneNumber}`;
 
   return trimmedPhoneNumber;
-}
-
-function MessageStatusChecks({ status }: { status: string }) {
-  if (status === "read" || status === "delivered") {
-    return (
-      <span
-        aria-label={status === "read" ? "Read" : "Delivered"}
-        className="relative inline-flex h-3.5 w-[1.125rem] items-center text-[var(--chat-check)]"
-      >
-        <Check aria-hidden="true" className="absolute left-0 top-0 size-3.5" />
-        <Check aria-hidden="true" className="absolute right-0 top-0 size-3.5" />
-      </span>
-    );
-  }
-
-  if (status === "sent") {
-    return (
-      <Check aria-label="Sent" className="size-3.5 text-[var(--chat-check)]" />
-    );
-  }
-
-  return null;
 }
 
 function shouldShowDateDivider(
@@ -1025,13 +1003,7 @@ export function MessageView({
                         </span>
 
                         {message.direction === "outbound" && message.status && (
-                          <>
-                            {message.status === "failed" ? (
-                              <XCircle className="h-3.5 w-3.5 text-red-500" />
-                            ) : (
-                              <MessageStatusChecks status={message.status} />
-                            )}
-                          </>
+                          <MessageStatusChecks status={message.status} />
                         )}
                       </div>
 

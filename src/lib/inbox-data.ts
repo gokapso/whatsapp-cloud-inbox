@@ -19,6 +19,7 @@ export type Conversation = WhatsappIdentity & {
   contactName?: string;
   messagesCount?: number;
   lastMessage?: {
+    id?: string;
     content: string;
     direction: string;
     type?: string;

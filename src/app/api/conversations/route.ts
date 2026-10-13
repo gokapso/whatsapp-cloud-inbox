@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     const cursors = readNumberCursors(searchParams.get('cursor'), selectedNumbers.map(number => number.phone_number_id));
     const activeNumbers = selectedNumbers.filter(number => cursors[number.phone_number_id] !== null);
     const fields = buildKapsoFields([
-      'contact_name', 'messages_count', 'last_message_type', 'last_message_text',
+      'contact_name', 'messages_count', 'last_message_id', 'last_message_type', 'last_message_text',
       'last_inbound_at', 'last_outbound_at',
     ]);
     const responses = await Promise.allSettled(activeNumbers.map(number => whatsappClient.conversations.list({

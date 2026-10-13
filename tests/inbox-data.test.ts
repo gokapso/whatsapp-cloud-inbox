@@ -164,13 +164,14 @@ describe('message projection and history', () => {
     assert.equal(result.phoneNumber, undefined);
     assert.equal(result.direction, 'outbound');
   });
-  it('retains conversation identity and the backend service-window timestamp', () => {
+  it('retains conversation identity, preview message ID, and the backend service-window timestamp', () => {
     const result = transformConversation({ id: 'conv', businessScopedUserId: 'US.opaque123', username: 'test_user',
-      kapso: { lastInboundAt: '2026-10-01T12:00:00Z' } }, { id: 'number-1', phone_number_id: 'number-1' });
+      kapso: { lastInboundAt: '2026-10-01T12:00:00Z', lastMessageId: 'wamid.preview', lastMessageText: 'Hello' } }, { id: 'number-1', phone_number_id: 'number-1' });
     assert.equal(result.businessScopedUserId, 'US.opaque123');
     assert.equal(result.username, 'test_user');
     assert.equal(result.phoneNumber, undefined);
     assert.equal(result.lastInboundAt, '2026-10-01T12:00:00Z');
+    assert.equal(result.lastMessage?.id, 'wamid.preview');
   });
   it('applies reaction removal across pages in timestamp order', () => {
     const result = mergeMessagePages([

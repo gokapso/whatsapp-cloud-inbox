@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useConversations } from '@/hooks/use-conversations';
+import { useCachedMessageStatuses } from '@/hooks/use-cached-message-statuses';
+import { messageStatusKey } from '@/lib/cached-message-status';
 import { getIdentityLabel, getIdentitySecondaryLabel } from '@/lib/whatsapp-identity';
 import { getInboxErrorMessage } from '@/lib/inbox-errors';
 import { differenceInDays, differenceInHours, differenceInMinutes, format, isValid, isYesterday } from 'date-fns';
@@ -24,6 +26,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ContactAvatar } from '@/components/contact-avatar';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { NewConversationDialog } from '@/components/new-conversation-dialog';
+import { MessageStatusChecks } from '@/components/message-status-checks';
 
 function formatConversationDate(timestamp?: string): string {
   if (!timestamp) return '';
@@ -112,6 +115,7 @@ type Props = {
 };
 
 export function ConversationList({ onSelectThread, selectedThreadKey, isHidden = false }: Props) {
+  const messageStatuses = useCachedMessageStatuses();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNumberId, setSelectedNumberId] = useState('');
   const [showNewConversation, setShowNewConversation] = useState(false);
@@ -539,11 +543,11 @@ export function ConversationList({ onSelectThread, selectedThreadKey, isHidden =
                         {getIdentityLabel(thread)}
                       </p>
                       {thread.lastMessage && (
-                        <p className="truncate text-xs leading-4 text-muted-foreground">
+                        <p className="flex items-center gap-1 text-xs leading-4 text-muted-foreground">
                           {thread.lastMessage.direction === 'outbound' && (
-                            <span className="text-[var(--chat-check)]">✓ </span>
+                            <MessageStatusChecks className="shrink-0" status={thread.lastMessage.id ? messageStatuses.get(messageStatusKey(thread.phoneNumberId, thread.lastMessage.id)) ?? 'outgoing' : 'outgoing'} />
                           )}
-                          {thread.lastMessage.content}
+                          <span className="min-w-0 truncate">{thread.lastMessage.content}</span>
                         </p>
                       )}
                       <p className="truncate text-[11px] leading-4 text-muted-foreground/80">

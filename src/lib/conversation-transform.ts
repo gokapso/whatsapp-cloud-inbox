@@ -43,6 +43,7 @@ export function transformConversation(conversation: ConversationRecord, sourcePh
     messagesCount: typeof kapso?.messagesCount === 'number' ? kapso.messagesCount : undefined,
     lastMessage: lastMessageText
       ? {
+          id: typeof kapso?.lastMessageId === 'string' ? kapso.lastMessageId : undefined,
           content: lastMessageText,
           direction: parseDirection(kapso),
           type: lastMessageType
