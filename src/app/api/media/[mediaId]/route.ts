@@ -7,6 +7,9 @@ export async function GET(
   { params }: { params: Promise<{ mediaId: string }> }
 ) {
   const { mediaId } = await params;
+  if (!/^[A-Za-z0-9_-]+$/.test(mediaId)) {
+    return NextResponse.json({ error: 'Invalid media ID' }, { status: 400 });
+  }
   try {
     const { searchParams } = new URL(request.url);
     const configuredPhoneNumber = await resolvePhoneNumberContext(searchParams.get('phoneNumberId') ?? undefined);
@@ -32,7 +35,7 @@ export async function GET(
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': metadata.mimeType || 'application/octet-stream',
-        'Cache-Control': 'public, max-age=86400'
+        'Cache-Control': 'private, no-store'
       }
     });
   } catch (error) {

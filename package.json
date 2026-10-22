@@ -5,7 +5,9 @@
     "dev": "next dev --turbopack -p 4000",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "test:runtime": "node --test tests/runtime/*.test.mjs"
   },
   "dependencies": {
     "@kapso/whatsapp-cloud-api": "^0.1.0",

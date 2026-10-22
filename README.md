@@ -2,7 +2,7 @@
 
 A WhatsApp Web-style inbox built with Next.js for the WhatsApp Cloud API. Send messages, templates, and interactive buttons with a familiar UI.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fgokapso%2Fwhatsapp-cloud-inbox&env=KAPSO_API_KEY&envDescription=Get%20your%20Kapso%20API%20key%20from%20app.kapso.ai&envLink=https%3A%2F%2Fapp.kapso.ai)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fgokapso%2Fwhatsapp-cloud-inbox&env=KAPSO_API_KEY%2CINBOX_AUTH_USERNAME%2CINBOX_AUTH_PASSWORD&envDescription=Get%20your%20Kapso%20API%20key%20from%20app.kapso.ai&envLink=https%3A%2F%2Fapp.kapso.ai)
 
 ![WhatsApp Cloud Inbox](https://cdn.jsdelivr.net/gh/gokapso/whatsapp-cloud-inbox@main/assets/kapso-whatsapp-inbox.png)
 
@@ -38,6 +38,8 @@ Create `.env`:
 
 ```env
 KAPSO_API_KEY=your_kapso_api_key
+INBOX_AUTH_USERNAME=your_inbox_username
+INBOX_AUTH_PASSWORD=a_long_unique_password
 WHATSAPP_API_URL=https://api.kapso.ai/meta/whatsapp  # Optional: custom API endpoint
 
 # Optional: only needed when your platform API is on a different host
@@ -47,6 +49,8 @@ KAPSO_API_BASE_URL=https://api.kapso.ai
 PHONE_NUMBER_ID=your_phone_number_id
 WABA_ID=your_business_account_id
 ```
+
+All pages and API routes require these HTTP Basic credentials; the app returns 503 until both are configured. The browser prompts for them on first access. Keep them server-side, distinct from your Kapso API key, and use HTTPS outside localhost. The inbox is a shared, single-team app: everyone with these credentials can access all configured numbers. For per-user permissions, replace the shared gate with your identity provider. Cross-origin mutations are rejected and authenticated responses use private, no-store caching.
 
 ### 4. Run
 
@@ -88,6 +92,20 @@ Automatically enforces WhatsApp's messaging policy:
 - ✅ Template messages (with all parameter types)
 - ✅ Interactive button messages
 - ✅ Failed message indicators
+
+## Local verification
+
+Use Node.js 22.18+ for the TypeScript unit-test runner. All test credentials are dummy values.
+
+```bash
+npm test
+npm run lint
+npx tsc --noEmit
+npm run build
+npm run test:runtime
+```
+
+The runtime checks start the built app on `127.0.0.1:16471`, exercise access control without provider credentials, then stop it.
 
 ## Contributing
 
