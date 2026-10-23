@@ -37,7 +37,27 @@ export async function authorizeInboxRequest(request: Request, env: {
   if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
     const origin = request.headers.get('origin');
     const fetchSite = request.headers.get('sec-fetch-site');
-    if (origin !== new URL(request.url).origin || fetchSite === 'cross-site') {
+    const requestUrl = new URL(request.url);
+    let expectedOrigin = requestUrl.origin;
+    // Next normalizes loopback IPs to localhost in middleware URLs. Preserve the
+    // browser's actual loopback authority without trusting arbitrary forwarded hosts.
+    const host = request.headers.get('host');
+    if (requestUrl.hostname === 'localhost' && host && host !== requestUrl.host) {
+      let validLoopbackAuthority = false;
+      try {
+        const authority = new URL(`${requestUrl.protocol}//${host}`);
+        if ((/^127(?:\.\d{1,3}){3}$/.test(authority.hostname) || authority.hostname === '[::1]' || authority.hostname === 'localhost') &&
+            authority.port === requestUrl.port && !authority.username && !authority.password &&
+            authority.pathname === '/' && !authority.search && !authority.hash) {
+          expectedOrigin = authority.origin;
+          validLoopbackAuthority = true;
+        }
+      } catch { /* Invalid authorities cannot establish a same-origin request. */ }
+      if (!validLoopbackAuthority) {
+        return new Response('Cross-origin request rejected', { status: 403, headers });
+      }
+    }
+    if (origin !== expectedOrigin || fetchSite === 'cross-site') {
       return new Response('Cross-origin request rejected', { status: 403, headers });
     }
   }

@@ -49,3 +49,15 @@ test('accepts case-insensitive Basic authentication schemes', async () => {
     assert.equal(await authorizeInboxRequest(request('/', 'GET', { authorization: `${scheme} ${btoa('demo:dummy-test-password')}` }), env), undefined);
   }
 });
+test('uses the actual loopback authority when Next normalizes the middleware URL', async () => {
+  for (const host of ['127.0.0.1:4000', '[::1]:4000']) {
+    const response = await authorizeInboxRequest(new Request('http://localhost:4000/api/settings', { method: 'PUT', headers: { authorization: auth, host, origin: `http://${host}` } }), env);
+    assert.equal(response, undefined);
+  }
+});
+test('does not turn loopback normalization into arbitrary-host or cross-origin trust', async () => {
+  for (const [host, origin] of [['evil.example:4000', 'http://evil.example:4000'], ['127.0.0.1:4001', 'http://127.0.0.1:4001'], ['user@127.0.0.1:4000', 'http://127.0.0.1:4000'], ['127.0.0.1:4000', 'http://localhost:4000'], ['evil.example:4000', 'http://localhost:4000'], ['127.0.0.1:4001', 'http://localhost:4000']]) {
+    const response = await authorizeInboxRequest(new Request('http://localhost:4000/api/settings', { method: 'PUT', headers: { authorization: auth, host, origin } }), env);
+    assert.equal(response.status, 403);
+  }
+});

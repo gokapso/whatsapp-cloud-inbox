@@ -62,6 +62,14 @@ Open [http://localhost:4000](http://localhost:4000)
 
 Open [http://localhost:4000/settings](http://localhost:4000/settings) to choose which WhatsApp numbers the inbox tracks. The app discovers `PHONE_NUMBER_ID` and `WABA_ID` values from Kapso using `KAPSO_API_KEY`, then stores the selected numbers in an HTTP-only cookie.
 
+## SDK 0.4.0 compatibility
+
+The inbox pins `@kapso/whatsapp-cloud-api` to the published `0.4.0` release. Its existing Graph v24.0 configuration and message, conversation and template APIs remain in use. Media downloads use `auth: "auto"`: the SDK prefers Kapso's `downloadUrl`, authenticates `kapso.ai` and its DNS subdomains, and omits SDK credentials for public or lookalike CDN hosts. Resource/media redirects and non-HTTPS media URLs are rejected; HTTP download failures return a route error instead of being served as media bytes. Media IDs must be identifiers, not URLs or paths.
+
+The inbox does not use the SDK's native Flow server helpers, so their app-secret/RSA/token-verifier migration introduces no additional inbox configuration. The access gate still requires `INBOX_AUTH_USERNAME` and `INBOX_AUTH_PASSWORD`, and mutation requests still require a same-origin `Origin`.
+
+Runtime validation uses test-process fetch fixtures that block real provider requests while checking SDK 0.4.0 route compatibility. These fixtures are not enabled in normal application startup.
+
 ## Key Features
 
 ### Template Messages
@@ -105,7 +113,7 @@ npm run build
 npm run test:runtime
 ```
 
-The runtime checks start the built app on `127.0.0.1:16471`, exercise access control without provider credentials, then stop it.
+The runtime checks start built app instances on `127.0.0.1:16471` and `127.0.0.1:16472`, check access control and mocked SDK route compatibility, then stop them. The SDK fixture uses dummy credentials and blocks all real outbound provider traffic.
 
 ## Contributing
 

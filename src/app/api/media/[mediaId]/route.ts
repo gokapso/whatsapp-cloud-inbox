@@ -24,7 +24,8 @@ export async function GET(
     const buffer = await whatsappClient.media.download({
       mediaId,
       phoneNumberId,
-      auth: 'never' // Force no auth headers for CDN
+      // SDK 0.4 prefers downloadUrl: authenticate trusted Kapso hosts, skip public CDNs.
+      auth: 'auto'
     });
 
     // If buffer is a Response, return it directly
