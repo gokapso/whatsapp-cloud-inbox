@@ -1,0 +1,133 @@
+name: Feature Request
+description: Suggest a new feature or enhancement
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! Please provide as much detail as possible to help us understand your request.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem does this feature solve? What's the use case?
+      placeholder: |
+        I'm trying to...
+        Currently, I have to manually...
+        This is frustrating because...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How would you like this feature to work?
+      placeholder: |
+        I would like to be able to...
+        The UI could show...
+        This would allow me to...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: feature-area
+    attributes:
+      label: Which area does this feature relate to?
+      description: Select all that apply
+      multiple: true
+      options:
+        - Message types (text, media, etc.)
+        - Template messages
+        - Interactive messages
+        - Message scheduling
+        - Contact management
+        - Conversation management
+        - Media handling
+        - Notifications
+        - UI/UX improvements
+        - API integration
+        - Performance
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: whatsapp-support
+    attributes:
+      label: Is this supported by WhatsApp Cloud API?
+      description: Check if WhatsApp Cloud API supports this feature
+      options:
+        - "Yes - WhatsApp Cloud API supports this"
+        - "No - This would be a UI/UX enhancement"
+        - "Not sure - Need to check"
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other solutions or workarounds have you considered?
+      placeholder: |
+        I tried using...
+        I could work around this by...
+        Other WhatsApp tools do this by...
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples from other tools
+      description: Are there similar features in other tools?
+      placeholder: |
+        WhatsApp Web has a feature where...
+        Other WhatsApp Cloud API tools allow...
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: How important is this feature to you?
+      options:
+        - Critical - Blocking my work
+        - High - Would significantly improve my workflow
+        - Medium - Nice to have
+        - Low - Minor improvement
+    validations:
+      required: true
+
+  - type: textarea
+    id: mockup
+    attributes:
+      label: UI mockup (if applicable)
+      description: If this is a UI change, show how you'd like it to look
+      placeholder: Drag and drop images or describe the UI
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Any other context or examples
+      placeholder: |
+        This would be especially useful for...
+        Related to issue #123
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I'm willing to submit a PR to implement this feature
+          required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission checklist
+      options:
+        - label: I have searched existing issues to avoid duplicates
+          required: true
+        - label: This feature aligns with the project's goal of providing a WhatsApp Cloud API inbox
+          required: true
