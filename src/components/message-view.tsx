@@ -30,6 +30,7 @@ import {
   type Message,
   conversationMessagesQueryKey,
   fetchConversationMessages,
+  getReplyPreviewContent,
   normalizeMessages,
   phoneThreadMessagesQueryKey,
   shortConversationId,
@@ -238,21 +239,6 @@ function getDisplayMessageContent(message: Message): string | null {
   return trimmedContent;
 }
 
-function getReplyPreviewContent(message: Message): string {
-  const content = getDisplayMessageContent(message) || message.caption || message.filename || '';
-  const trimmedContent = content.trim();
-
-  if (trimmedContent) {
-    return trimmedContent.length > 140 ? `${trimmedContent.slice(0, 137)}...` : trimmedContent;
-  }
-
-  if (message.hasMedia && message.messageType) {
-    return `${message.messageType.charAt(0).toUpperCase()}${message.messageType.slice(1)} message`;
-  }
-
-  return 'Message';
-}
-
 function getMessageSenderLabel(
   message: Pick<Message, 'direction'>,
   contactName?: string,
@@ -451,7 +437,7 @@ export function MessageView({
         repliedTo: {
           id: replyTarget.id,
           conversationId: replyTarget.conversationId,
-          content: getReplyPreviewContent(replyTarget),
+          content: getReplyPreviewContent(replyTarget, 140, getDisplayMessageContent(replyTarget)),
           direction: replyTarget.direction,
           messageType: replyTarget.messageType,
           senderName: getMessageSenderLabel(replyTarget, contactName, phoneNumber),
@@ -1146,7 +1132,7 @@ export function MessageView({
                       Replying to {getMessageSenderLabel(replyingToMessage, contactName, phoneNumber)}
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {getReplyPreviewContent(replyingToMessage)}
+                      {getReplyPreviewContent(replyingToMessage, 140, getDisplayMessageContent(replyingToMessage))}
                     </p>
                   </div>
                   <Button

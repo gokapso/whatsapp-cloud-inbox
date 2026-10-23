@@ -88,7 +88,7 @@ export function phoneThreadMessagesQueryKey(
   return ['phone-thread-messages', phoneNumberId ?? '', phoneNumber ?? '', conversationIds.join(':')] as const;
 }
 
-function parseTimestamp(timestamp?: string): number {
+export function parseTimestamp(timestamp?: string): number {
   if (!timestamp) return 0;
   const time = Date.parse(timestamp);
   return Number.isFinite(time) ? time : 0;
@@ -216,12 +216,16 @@ export function shortConversationId(conversationId?: string): string {
   return conversationId.replace(/-/g, '').slice(0, 8);
 }
 
-function getReplyPreviewContent(message: Message): string {
-  const content = message.caption || message.content || message.filename || '';
+export function getReplyPreviewContent(
+  message: Message,
+  maxLength = 140,
+  contentOverride?: string | null,
+): string {
+  const content = contentOverride || message.caption || message.content || message.filename || '';
   const trimmedContent = content.trim();
 
   if (trimmedContent) {
-    return trimmedContent.length > 120 ? `${trimmedContent.slice(0, 117)}...` : trimmedContent;
+    return trimmedContent.length > maxLength ? `${trimmedContent.slice(0, maxLength - 3)}...` : trimmedContent;
   }
 
   if (message.hasMedia && message.messageType) {
@@ -253,7 +257,7 @@ export function normalizeMessages(messages: Message[]): Message[] {
           ? {
               id: repliedMessage.id,
               conversationId: repliedMessage.conversationId,
-              content: getReplyPreviewContent(repliedMessage),
+              content: getReplyPreviewContent(repliedMessage, 120),
               direction: repliedMessage.direction,
               messageType: repliedMessage.messageType,
               senderName: repliedMessage.direction === 'outbound' ? 'You' : 'Contact',

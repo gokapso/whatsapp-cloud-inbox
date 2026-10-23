@@ -14,6 +14,7 @@ import {
   fetchConversations,
   filterConversationThreads,
   groupConversationsByPhoneNumber,
+  parseTimestamp,
   shortConversationId,
 } from '@/lib/inbox-data';
 import { Button } from '@/components/ui/button';
@@ -88,12 +89,6 @@ type ThreadNotificationSnapshot = {
   lastMessageContent?: string;
   lastMessageDirection?: string;
 };
-
-function parseTimestamp(timestamp?: string): number {
-  if (!timestamp) return 0;
-  const time = Date.parse(timestamp);
-  return Number.isFinite(time) ? time : 0;
-}
 
 function getThreadNotificationSnapshot(thread: ConversationThread): ThreadNotificationSnapshot {
   return {
