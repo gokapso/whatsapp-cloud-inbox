@@ -50,7 +50,7 @@ PHONE_NUMBER_ID=your_phone_number_id
 WABA_ID=your_business_account_id
 ```
 
-All pages and API routes require these HTTP Basic credentials; the app returns 503 until both are configured. The browser prompts for them on first access. Keep them server-side, distinct from your Kapso API key, and use HTTPS outside localhost. The inbox is a shared, single-team app: everyone with these credentials can access all configured numbers. For per-user permissions, replace the shared gate with your identity provider. Cross-origin mutations are rejected and authenticated responses use private, no-store caching.
+All pages and API routes require these HTTP Basic credentials; the app returns 503 until both are configured. The browser prompts for them on first access. Keep them server-side, distinct from your Kapso API key, and use HTTPS outside localhost. The inbox is a shared, single-team app: everyone with these credentials can access all configured numbers. For per-user permissions, replace the shared gate with your identity provider. Mutation requests must carry an `Origin` exactly matching the inbox URL; browsers send this automatically, and non-browser clients must set it explicitly. Missing or cross-origin values are rejected and authenticated responses use private, no-store caching.
 
 ### 4. Run
 

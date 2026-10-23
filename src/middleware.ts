@@ -13,4 +13,4 @@ export async function middleware(request: NextRequest) {
 }
 
 // Cover pages, settings, and every API route, including future routes.
-export const config = { matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'] };
+export const config = { matcher: ['/((?!_next/static/|favicon.ico$).*)'] };

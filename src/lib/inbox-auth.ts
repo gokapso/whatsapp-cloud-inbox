@@ -12,10 +12,11 @@ export async function authorizeInboxRequest(request: Request, env: {
 
   let supplied = '';
   const authorization = request.headers.get('authorization');
-  if (authorization?.startsWith('Basic ')) {
+  const basicCredentials = authorization?.match(/^Basic +(.+)$/i)?.[1];
+  if (basicCredentials) {
     try {
       supplied = new TextDecoder('utf-8', { fatal: true }).decode(
-        Uint8Array.from(atob(authorization.slice(6)), character => character.charCodeAt(0))
+        Uint8Array.from(atob(basicCredentials), character => character.charCodeAt(0))
       );
     } catch { /* Malformed credentials are unauthorized. */ }
   }
@@ -36,7 +37,7 @@ export async function authorizeInboxRequest(request: Request, env: {
   if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
     const origin = request.headers.get('origin');
     const fetchSite = request.headers.get('sec-fetch-site');
-    if ((origin && origin !== new URL(request.url).origin) || fetchSite === 'cross-site') {
+    if (origin !== new URL(request.url).origin || fetchSite === 'cross-site') {
       return new Response('Cross-origin request rejected', { status: 403, headers });
     }
   }

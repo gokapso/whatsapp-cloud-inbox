@@ -55,3 +55,11 @@ test('invalid media ID is rejected before SDK or provider configuration', async 
   const response = await fetch(base + '/api/media/https%3A%2F%2Fexternal.example', { headers: { authorization } });
   assert.equal(response.status, 400);
 });
+test('authenticated mutation without Origin fails closed', async () => {
+  const response = await fetch(base + '/api/settings', { method: 'POST', headers: { authorization, 'sec-fetch-site': 'same-origin' } });
+  assert.equal(response.status, 403);
+});
+test('image optimizer endpoint also requires authentication', async () => {
+  const response = await fetch(base + '/_next/image?url=%2Ffavicon.ico&w=64&q=75');
+  assert.equal(response.status, 401);
+});

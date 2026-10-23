@@ -38,3 +38,14 @@ test('accepts UTF-8 credentials as advertised by the challenge', async () => {
   const authorization = 'Basic ' + Buffer.from('Andrés:dummy-contraseña', 'utf8').toString('base64');
   assert.equal(await authorizeInboxRequest(request('/', 'GET', { authorization }), unicodeEnv), undefined);
 });
+test('fails closed when unsafe requests lack an Origin, even with Fetch Metadata', async () => {
+  for (const extraHeaders of [{}, { 'sec-fetch-site': 'same-origin' }]) {
+    const response = await authorizeInboxRequest(request('/api/settings', 'POST', { authorization: auth, ...extraHeaders }), env);
+    assert.equal(response.status, 403);
+  }
+});
+test('accepts case-insensitive Basic authentication schemes', async () => {
+  for (const scheme of ['basic', 'BASIC']) {
+    assert.equal(await authorizeInboxRequest(request('/', 'GET', { authorization: `${scheme} ${btoa('demo:dummy-test-password')}` }), env), undefined);
+  }
+});
