@@ -7,6 +7,9 @@ export async function GET(
   { params }: { params: Promise<{ mediaId: string }> }
 ) {
   const { mediaId } = await params;
+  if (!/^[A-Za-z0-9_-]+$/.test(mediaId)) {
+    return NextResponse.json({ error: 'Invalid media ID' }, { status: 400 });
+  }
   try {
     const { searchParams } = new URL(request.url);
     const configuredPhoneNumber = await resolvePhoneNumberContext(searchParams.get('phoneNumberId') ?? undefined);
@@ -21,7 +24,8 @@ export async function GET(
     const buffer = await whatsappClient.media.download({
       mediaId,
       phoneNumberId,
-      auth: 'never' // Force no auth headers for CDN
+      // SDK 0.4 prefers downloadUrl: authenticate trusted Kapso hosts, skip public CDNs.
+      auth: 'auto'
     });
 
     // If buffer is a Response, return it directly
@@ -32,7 +36,7 @@ export async function GET(
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': metadata.mimeType || 'application/octet-stream',
-        'Cache-Control': 'public, max-age=86400'
+        'Cache-Control': 'private, no-store'
       }
     });
   } catch (error) {

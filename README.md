@@ -2,7 +2,7 @@
 
 A WhatsApp Web-style inbox built with Next.js for the WhatsApp Cloud API. Send messages, templates, and interactive buttons with a familiar UI.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fgokapso%2Fwhatsapp-cloud-inbox&env=KAPSO_API_KEY&envDescription=Get%20your%20Kapso%20API%20key%20from%20app.kapso.ai&envLink=https%3A%2F%2Fapp.kapso.ai)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fgokapso%2Fwhatsapp-cloud-inbox&env=KAPSO_API_KEY%2CINBOX_AUTH_USERNAME%2CINBOX_AUTH_PASSWORD&envDescription=Get%20your%20Kapso%20API%20key%20from%20app.kapso.ai&envLink=https%3A%2F%2Fapp.kapso.ai)
 
 ![WhatsApp Cloud Inbox](https://cdn.jsdelivr.net/gh/gokapso/whatsapp-cloud-inbox@main/assets/kapso-whatsapp-inbox.png)
 
@@ -38,6 +38,8 @@ Create `.env`:
 
 ```env
 KAPSO_API_KEY=your_kapso_api_key
+INBOX_AUTH_USERNAME=your_inbox_username
+INBOX_AUTH_PASSWORD=a_long_unique_password
 WHATSAPP_API_URL=https://api.kapso.ai/meta/whatsapp  # Optional: custom API endpoint
 
 # Optional: only needed when your platform API is on a different host
@@ -48,6 +50,8 @@ PHONE_NUMBER_ID=your_phone_number_id
 WABA_ID=your_business_account_id
 ```
 
+All pages and API routes require these HTTP Basic credentials; the app returns 503 until both are configured. The browser prompts for them on first access. Keep them server-side, distinct from your Kapso API key, and use HTTPS outside localhost. The inbox is a shared, single-team app: everyone with these credentials can access all configured numbers. For per-user permissions, replace the shared gate with your identity provider. Mutation requests must carry an `Origin` exactly matching the inbox URL; browsers send this automatically, and non-browser clients must set it explicitly. Missing or cross-origin values are rejected and authenticated responses use private, no-store caching.
+
 ### 4. Run
 
 ```bash
@@ -57,6 +61,14 @@ npm run dev
 Open [http://localhost:4000](http://localhost:4000)
 
 Open [http://localhost:4000/settings](http://localhost:4000/settings) to choose which WhatsApp numbers the inbox tracks. The app discovers `PHONE_NUMBER_ID` and `WABA_ID` values from Kapso using `KAPSO_API_KEY`, then stores the selected numbers in an HTTP-only cookie.
+
+## SDK 0.4.0 compatibility
+
+The inbox pins `@kapso/whatsapp-cloud-api` to the published `0.4.0` release. Its existing Graph v24.0 configuration and message, conversation and template APIs remain in use. Media downloads use `auth: "auto"`: the SDK prefers Kapso's `downloadUrl`, authenticates `kapso.ai` and its DNS subdomains, and omits SDK credentials for public or lookalike CDN hosts. Resource/media redirects and non-HTTPS media URLs are rejected; HTTP download failures return a route error instead of being served as media bytes. Media IDs must be identifiers, not URLs or paths.
+
+The inbox does not use the SDK's native Flow server helpers, so their app-secret/RSA/token-verifier migration introduces no additional inbox configuration. The access gate still requires `INBOX_AUTH_USERNAME` and `INBOX_AUTH_PASSWORD`, and mutation requests still require a same-origin `Origin`.
+
+Runtime validation uses test-process fetch fixtures that block real provider requests while checking SDK 0.4.0 route compatibility. These fixtures are not enabled in normal application startup.
 
 ## Key Features
 
@@ -88,6 +100,20 @@ Automatically enforces WhatsApp's messaging policy:
 - ✅ Template messages (with all parameter types)
 - ✅ Interactive button messages
 - ✅ Failed message indicators
+
+## Local verification
+
+Use Node.js 22.18+ for the TypeScript unit-test runner. All test credentials are dummy values.
+
+```bash
+npm test
+npm run lint
+npx tsc --noEmit
+npm run build
+npm run test:runtime
+```
+
+The runtime checks start built app instances on `127.0.0.1:16471` and `127.0.0.1:16472`, check access control and mocked SDK route compatibility, then stop them. The SDK fixture uses dummy credentials and blocks all real outbound provider traffic.
 
 ## Contributing
 
