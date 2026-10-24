@@ -353,6 +353,9 @@ export function MessageView({
   );
   const threadKey = threadConversationIds.join(":");
   const initialScrollKey = `${conversationId ?? ""}:${threadKey}`;
+  const composerKey = `${phoneNumberId ?? ""}:${phoneNumber ?? ""}`;
+  const previewGenerationRef = useRef(0);
+  const sendGenerationRef = useRef(0);
 
   const getScrollViewport = useCallback(() => {
     return (
@@ -629,8 +632,20 @@ export function MessageView({
   }, [messages]);
 
   useEffect(() => {
+    previewGenerationRef.current += 1;
+    sendGenerationRef.current += 1;
     setReplyingToMessage(null);
-  }, [threadKey]);
+    setMessageInput("");
+    setSelectedFile(null);
+    setFilePreview(null);
+    setSending(false);
+    setShowTemplateDialog(false);
+    setShowInteractiveDialog(false);
+    setHighlightedMessageId(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }, [composerKey]);
 
   useEffect(() => {
     if (!canSendRegularMessage) {
@@ -684,12 +699,14 @@ export function MessageView({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const previewGeneration = ++previewGenerationRef.current;
     setSelectedFile(file);
 
     // Create preview for images
     if (file.type.startsWith("image/")) {
       const reader = new FileReader();
       reader.onloadend = () => {
+        if (previewGeneration !== previewGenerationRef.current) return;
         setFilePreview(reader.result as string);
       };
       reader.readAsDataURL(file);
@@ -699,6 +716,7 @@ export function MessageView({
   };
 
   const handleRemoveFile = () => {
+    previewGenerationRef.current += 1;
     setSelectedFile(null);
     setFilePreview(null);
     if (fileInputRef.current) {
@@ -713,6 +731,7 @@ export function MessageView({
       return;
 
     const replyTarget = replyingToMessage;
+    const sendGeneration = sendGenerationRef.current;
     setSending(true);
     try {
       const formData = new FormData();
@@ -740,6 +759,11 @@ export function MessageView({
         throw new Error(data?.error || "Failed to send message");
       }
 
+      // Contact switched (including A→B→A) while this request was in flight.
+      if (sendGeneration !== sendGenerationRef.current) {
+        return;
+      }
+
       const sentMessageId = extractSentMessageId(data);
       if (sentMessageId && replyTarget) {
         rememberLocalReplyContext(sentMessageId, replyTarget);
@@ -755,7 +779,9 @@ export function MessageView({
     } catch (error) {
       console.error("Error sending message:", error);
     } finally {
-      setSending(false);
+      if (sendGeneration === sendGenerationRef.current) {
+        setSending(false);
+      }
     }
   };
 
