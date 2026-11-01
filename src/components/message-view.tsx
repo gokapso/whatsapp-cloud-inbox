@@ -661,30 +661,22 @@ export function MessageView({
     };
   }, []);
 
-  // Track if user is near bottom of scroll
+  // ScrollArea mounts only after a thread is selected and loading finishes.
   useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
+    if (!conversationId || loading) return;
+
+    const viewport = getScrollViewport();
+    if (!viewport) return;
 
     const handleScroll = () => {
-      const viewport = container.querySelector(
-        "[data-radix-scroll-area-viewport]",
-      );
-      if (!viewport) return;
-
       const { scrollTop, scrollHeight, clientHeight } = viewport;
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
       setIsNearBottom(distanceFromBottom < 100);
     };
 
-    const viewport = container.querySelector(
-      "[data-radix-scroll-area-viewport]",
-    );
-    if (viewport) {
-      viewport.addEventListener("scroll", handleScroll);
-      return () => viewport.removeEventListener("scroll", handleScroll);
-    }
-  }, []);
+    viewport.addEventListener("scroll", handleScroll);
+    return () => viewport.removeEventListener("scroll", handleScroll);
+  }, [conversationId, loading, getScrollViewport]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
