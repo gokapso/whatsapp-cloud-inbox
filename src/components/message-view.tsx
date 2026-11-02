@@ -317,6 +317,7 @@ export function MessageView({
   const [refreshing, setRefreshing] = useState(false);
   const [messageInput, setMessageInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [canSendRegularMessage, setCanSendRegularMessage] = useState(true);
@@ -506,13 +507,24 @@ export function MessageView({
     return applyLocalReplyContexts(normalizeMessages(messageBatches.flat()));
   }, [applyLocalReplyContexts, phoneNumberId, queryClient, threadConversationIds]);
 
-  const { data: messages = [], isPending: loading } = useQuery({
+  const {
+    data: messages = [],
+    error: messagesError,
+    isError,
+    isPending: loading,
+    refetch,
+  } = useQuery({
     queryKey: threadMessagesQueryKey,
     queryFn: fetchThreadMessages,
     enabled: threadConversationIds.length > 0,
     refetchInterval: 5_000,
     refetchOnMount: false,
   });
+  const threadLoadFailed = isError && messages.length === 0;
+  const messagesErrorText =
+    messagesError instanceof Error && messagesError.message
+      ? messagesError.message
+      : "Failed to load messages";
 
   useEffect(() => {
     try {
@@ -628,8 +640,10 @@ export function MessageView({
   ]);
 
   useEffect(() => {
+    // A failed fetch has no thread data. Don't treat that as an empty chat.
+    if (loading || threadLoadFailed) return;
     setCanSendRegularMessage(isWithin24HourWindow(messages));
-  }, [messages]);
+  }, [loading, messages, threadLoadFailed]);
 
   useEffect(() => {
     previewGenerationRef.current += 1;
@@ -639,6 +653,7 @@ export function MessageView({
     setSelectedFile(null);
     setFilePreview(null);
     setSending(false);
+    setSendError(null);
     setShowTemplateDialog(false);
     setShowInteractiveDialog(false);
     setHighlightedMessageId(null);
@@ -700,6 +715,7 @@ export function MessageView({
     if (!file) return;
 
     const previewGeneration = ++previewGenerationRef.current;
+    setSendError(null);
     setSelectedFile(file);
 
     // Create preview for images
@@ -717,6 +733,7 @@ export function MessageView({
 
   const handleRemoveFile = () => {
     previewGenerationRef.current += 1;
+    setSendError(null);
     setSelectedFile(null);
     setFilePreview(null);
     if (fileInputRef.current) {
@@ -732,7 +749,9 @@ export function MessageView({
 
     const replyTarget = replyingToMessage;
     const sendGeneration = sendGenerationRef.current;
+    let sent = false;
     setSending(true);
+    setSendError(null);
     try {
       const formData = new FormData();
       formData.append("to", phoneNumber);
@@ -756,7 +775,8 @@ export function MessageView({
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(data?.error || "Failed to send message");
+        const apiError = typeof data?.error === "string" ? data.error : "";
+        throw new Error(apiError || "Failed to send message");
       }
 
       // Contact switched (including A→B→A) while this request was in flight.
@@ -764,11 +784,13 @@ export function MessageView({
         return;
       }
 
+      sent = true;
       const sentMessageId = extractSentMessageId(data);
       if (sentMessageId && replyTarget) {
         rememberLocalReplyContext(sentMessageId, replyTarget);
       }
 
+      setSendError(null);
       setMessageInput("");
       setReplyingToMessage(null);
       handleRemoveFile();
@@ -778,6 +800,14 @@ export function MessageView({
       await refreshCurrentThread();
     } catch (error) {
       console.error("Error sending message:", error);
+      if (sent || sendGeneration !== sendGenerationRef.current) {
+        return;
+      }
+      setSendError(
+        error instanceof Error && error.message
+          ? error.message
+          : "Failed to send message",
+      );
     } finally {
       if (sendGeneration === sendGenerationRef.current) {
         setSending(false);
@@ -935,7 +965,24 @@ export function MessageView({
         className="h-0 flex-1 overscroll-contain p-3 sm:p-4 lg:p-6"
       >
         <div className="mx-auto w-full max-w-[900px]">
-          {messages.length === 0 ? (
+          {threadLoadFailed ? (
+            <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">
+              <p role="alert" className="text-sm text-destructive">
+                {messagesErrorText}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-11 md:h-8"
+                onClick={() => {
+                  void refetch();
+                }}
+              >
+                Retry
+              </Button>
+            </div>
+          ) : messages.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               No messages yet
             </p>
@@ -1160,7 +1207,12 @@ export function MessageView({
         </div>
       </ScrollArea>
 
-      <div className="border-t border-[var(--chat-border-strong)] bg-[var(--chat-toolbar)] safe-area-bottom">
+      <div
+        className={cn(
+          "border-t border-[var(--chat-border-strong)] bg-[var(--chat-toolbar)] safe-area-bottom",
+          threadLoadFailed && "hidden",
+        )}
+      >
         {canSendRegularMessage ? (
           <>
             {replyingToMessage && (
@@ -1226,6 +1278,17 @@ export function MessageView({
               </div>
             )}
 
+            {sendError && (
+              <div className="mx-auto w-full max-w-[900px] px-2.5 pt-2 sm:px-3 sm:pt-3">
+                <div
+                  role="alert"
+                  className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                >
+                  {sendError}
+                </div>
+              </div>
+            )}
+
             <form
               onSubmit={handleSendMessage}
               className="mx-auto flex w-full max-w-[900px] items-end gap-1.5 px-2.5 py-2 sm:gap-2 sm:p-3"
@@ -1265,7 +1328,10 @@ export function MessageView({
                 ref={messageInputRef}
                 type="text"
                 value={messageInput}
-                onChange={(e) => setMessageInput(e.target.value)}
+                onChange={(e) => {
+                  setMessageInput(e.target.value);
+                  if (sendError) setSendError(null);
+                }}
                 placeholder="Type a message"
                 disabled={sending}
                 aria-label="Message"
