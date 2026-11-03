@@ -33,9 +33,15 @@ globalThis.fetch = async (input, init = {}) => {
       assert.equal(body.to, '+15550000001');
       assert.ok(['text', 'template', 'interactive', 'image', 'video', 'audio', 'document'].includes(body.type));
       if (body.type === 'template') {
-        assert.equal(body.template.name, 'dummy_template');
         assert.equal(body.template.language.code, 'en_US');
-        assert.equal(body.template.components.find(component => component.type === 'body').parameters[0].text, 'Dummy');
+        const parameters = body.template.components.flatMap(component => component.parameters ?? []);
+        if (body.template.name === 'dummy_named_template') {
+          assert.deepEqual(parameters.map(parameter => [parameter.parameter_name, parameter.text]), [['order_id', '100'], ['first_name', 'Ada'], ['promo', 'SAVE']]);
+        } else {
+          assert.equal(body.template.name, 'dummy_template');
+          assert.deepEqual(parameters.map(parameter => parameter.text), ['Hello', 'Dummy', 'track']);
+          assert.ok(parameters.every(parameter => !Object.hasOwn(parameter, 'parameter_name')));
+        }
       }
       if (body.type === 'interactive') assert.equal(body.interactive.type, 'button');
       if (['image', 'video', 'audio', 'document'].includes(body.type)) assert.equal(body[body.type].id, 'uploaded-1');
