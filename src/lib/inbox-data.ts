@@ -94,9 +94,13 @@ function parseTimestamp(timestamp?: string): number {
   return Number.isFinite(time) ? time : 0;
 }
 
+function digitsOnly(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
 function conversationGroupKey(conversation: Conversation): string {
   const phoneNumber = conversation.phoneNumber.trim();
-  const comparablePhoneNumber = phoneNumber.replace(/\D/g, '');
+  const comparablePhoneNumber = digitsOnly(phoneNumber);
   const contactKey = comparablePhoneNumber || phoneNumber || `conversation:${conversation.id}`;
   return `${conversation.phoneNumberId}:${contactKey}`;
 }
@@ -175,12 +179,19 @@ export function groupConversationsByPhoneNumber(conversations: Conversation[]): 
     .sort((a, b) => byMostRecentConversation(a.latestConversation, b.latestConversation));
 }
 
+function matchesPhoneQuery(phone: string | undefined, normalizedQuery: string, queryDigits: string): boolean {
+  if (!phone) return false;
+  if (phone.toLowerCase().includes(normalizedQuery)) return true;
+  return queryDigits.length > 0 && digitsOnly(phone).includes(queryDigits);
+}
+
 export function filterConversationThreads(
   threads: ConversationThread[],
   statusFilter: ConversationStatusFilter,
   searchQuery: string,
 ): ConversationThread[] {
   const normalizedQuery = searchQuery.trim().toLowerCase();
+  const queryDigits = digitsOnly(normalizedQuery);
 
   return threads.filter((thread) => {
     if (statusFilter !== 'all' && thread.latestConversation.status !== statusFilter) {
@@ -190,8 +201,8 @@ export function filterConversationThreads(
     if (!normalizedQuery) return true;
 
     return (
-      thread.phoneNumber.toLowerCase().includes(normalizedQuery) ||
-      thread.inboxPhoneNumber?.toLowerCase().includes(normalizedQuery) ||
+      matchesPhoneQuery(thread.phoneNumber, normalizedQuery, queryDigits) ||
+      matchesPhoneQuery(thread.inboxPhoneNumber, normalizedQuery, queryDigits) ||
       thread.inboxDisplayName?.toLowerCase().includes(normalizedQuery) ||
       thread.contactName?.toLowerCase().includes(normalizedQuery) ||
       thread.conversations.some(conversation => conversation.id.toLowerCase().includes(normalizedQuery))
