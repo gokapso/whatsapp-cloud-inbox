@@ -48,7 +48,11 @@ test('serializes text messages through the inbox route', async () => {
   assert.equal((await response.json()).messages[0].messageStatus, 'text');
 });
 test('sends the template builder output accepted by SDK 0.4.0', async () => {
-  const response = await post('/api/templates/send', { phoneNumberId: '123', to: '+15550000001', templateName: 'dummy_template', languageCode: 'en_US', parameters: ['Dummy'], parameterInfo: { format: 'POSITIONAL', parameters: [{ name: 'body_param_1', component: 'BODY' }] } });
+  const response = await post('/api/templates/send', {
+    phoneNumberId: '123', to: '+15550000001', templateName: 'dummy_template', languageCode: 'en_US',
+    parameters: ['Hello', 'Dummy', 'track'],
+    parameterInfo: { format: 'POSITIONAL', parameters: [{ name: 'header_param_1', component: 'HEADER' }, { name: 'body_param_1', component: 'BODY' }, { name: 'button_0_param_1', component: 'BUTTON', buttonIndex: 0 }] }
+  });
   assert.equal(response.status, 200, response.status === 200 ? undefined : await response.clone().text());
   assert.equal((await response.json()).messages[0].messageStatus, 'template');
 });

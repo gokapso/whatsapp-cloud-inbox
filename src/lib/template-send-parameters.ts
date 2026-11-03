@@ -1,6 +1,6 @@
 import type { TemplateParameterInfo, TemplateParameters } from '@/types/whatsapp';
 
-type TextParameter = { type: 'text'; text: string; parameter_name?: string };
+type TextParameter = { type: 'text'; text: string; parameterName?: string };
 
 export type TextTemplateParameters = {
   header?: TextParameter;
@@ -29,9 +29,9 @@ export function buildTextTemplateParameters(
   };
 
   const textParameter = (text: string, name: string): TextParameter => {
-    // Meta error 132012: parameter_name is valid only on named templates.
+    // SDK 0.4.0 sends parameterName as parameter_name. Meta accepts that only for named templates.
     if (parameterInfo.format === 'NAMED') {
-      return { type: 'text', text, parameter_name: name };
+      return { type: 'text', text, parameterName: name };
     }
     return { type: 'text', text };
   };

@@ -26,10 +26,12 @@ test('positional templates send ordered text parameters without parameter_name',
     { type: 'text', text: 'Ada' },
     { type: 'text', text: 'SAVE' }
   ]);
-  assert.equal(JSON.stringify(payload).includes('parameter_name'), false);
+  const encoded = JSON.stringify(payload);
+  assert.equal(encoded.includes('parameterName'), false);
+  assert.equal(encoded.includes('parameter_name'), false);
 });
 
-test('named templates keep parameter_name for header, body, and url buttons', () => {
+test('named templates keep parameterName for header, body, and url buttons', () => {
   const payload = payloadFor(
     { order_id: '100', first_name: 'Ada', promo: 'SAVE' },
     {
@@ -43,9 +45,9 @@ test('named templates keep parameter_name for header, body, and url buttons', ()
   );
 
   assert.deepEqual(parameterTexts(payload), [
-    { type: 'text', text: '100', parameter_name: 'order_id' },
-    { type: 'text', text: 'Ada', parameter_name: 'first_name' },
-    { type: 'text', text: 'SAVE', parameter_name: 'promo' }
+    { type: 'text', text: '100', parameterName: 'order_id' },
+    { type: 'text', text: 'Ada', parameterName: 'first_name' },
+    { type: 'text', text: 'SAVE', parameterName: 'promo' }
   ]);
 });
 
@@ -59,5 +61,7 @@ test('omits parameter_name when format is missing and skips blank values', () =>
   });
 
   assert.deepEqual(parameterTexts(payload), [{ type: 'text', text: 'Ada' }]);
-  assert.equal(JSON.stringify(payload).includes('parameter_name'), false);
+  const encoded = JSON.stringify(payload);
+  assert.equal(encoded.includes('parameterName'), false);
+  assert.equal(encoded.includes('parameter_name'), false);
 });

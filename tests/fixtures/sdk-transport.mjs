@@ -39,7 +39,7 @@ globalThis.fetch = async (input, init = {}) => {
           assert.deepEqual(parameters.map(parameter => [parameter.parameter_name, parameter.text]), [['order_id', '100'], ['first_name', 'Ada'], ['promo', 'SAVE']]);
         } else {
           assert.equal(body.template.name, 'dummy_template');
-          assert.deepEqual(parameters.map(parameter => parameter.text), ['Dummy']);
+          assert.deepEqual(parameters.map(parameter => parameter.text), ['Hello', 'Dummy', 'track']);
           assert.ok(parameters.every(parameter => !Object.hasOwn(parameter, 'parameter_name')));
         }
       }
