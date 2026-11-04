@@ -149,6 +149,8 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const parsedLimit = Number.parseInt(searchParams.get('limit') ?? '', 10);
     const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 100) : 50;
+    const after = searchParams.get('after')?.trim() || undefined;
+    const before = searchParams.get('before')?.trim() || undefined;
     const phoneNumber = await resolvePhoneNumberContext(searchParams.get('phoneNumberId') ?? undefined);
     const phoneNumberId = phoneNumber.phone_number_id;
 
@@ -156,6 +158,8 @@ export async function GET(
       phoneNumberId,
       conversationId,
       limit,
+      ...(after ? { after } : {}),
+      ...(before ? { before } : {}),
       fields: buildKapsoFields([
         'direction',
         'status',
