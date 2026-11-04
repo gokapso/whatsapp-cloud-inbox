@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from "react";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import {
   format,
   formatDistanceToNow,
@@ -11,6 +11,7 @@ import {
   differenceInHours,
 } from "date-fns";
 import {
+  Loader2,
   RefreshCw,
   Paperclip,
   Send,
@@ -26,12 +27,17 @@ import {
 import { cn } from "@/lib/utils";
 import {
   CONVERSATIONS_QUERY_KEY,
+  MESSAGE_PAGE_LIMIT,
   type Conversation,
+  type ConversationHistory,
   type Message,
   conversationMessagesQueryKey,
   fetchConversationMessages,
+  filterMessagesToHistoryFrontier,
+  mergeLatestMessagePage,
+  mergeOlderMessagePage,
   normalizeMessages,
-  phoneThreadMessagesQueryKey,
+  selectConversationForOlderPage,
   shortConversationId,
 } from "@/lib/inbox-data";
 import { MediaMessage } from "@/components/media-message";
@@ -178,6 +184,57 @@ function getDisabledInputMessage(messages: Message[]): string {
 }
 
 const MESSAGE_SKELETON_WIDTHS = [280, 180, 320, 210, 260, 170];
+const NEAR_BOTTOM_THRESHOLD_PX = 100;
+const LOAD_OLDER_SCROLL_THRESHOLD_PX = 120;
+const MESSAGE_POLL_INTERVAL_MS = 5_000;
+
+type ScrollAnchor = {
+  messageId: string;
+  offset: number;
+  scrollHeight: number;
+  scrollTop: number;
+};
+
+function captureScrollAnchor(viewport: HTMLElement): ScrollAnchor {
+  const viewportTop = viewport.getBoundingClientRect().top;
+  const nodes = viewport.querySelectorAll<HTMLElement>("[data-message-id]");
+
+  for (const node of nodes) {
+    const messageId = node.dataset.messageId;
+    if (!messageId) continue;
+    const rect = node.getBoundingClientRect();
+    if (rect.bottom > viewportTop + 1) {
+      return {
+        messageId,
+        offset: rect.top - viewportTop,
+        scrollHeight: viewport.scrollHeight,
+        scrollTop: viewport.scrollTop,
+      };
+    }
+  }
+
+  return {
+    messageId: "",
+    offset: 0,
+    scrollHeight: viewport.scrollHeight,
+    scrollTop: viewport.scrollTop,
+  };
+}
+
+function restoreScrollAnchor(viewport: HTMLElement, anchor: ScrollAnchor) {
+  if (anchor.messageId) {
+    const node = viewport.querySelector<HTMLElement>(
+      `[data-message-id="${CSS.escape(anchor.messageId)}"]`,
+    );
+    if (node) {
+      const offset = node.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+      viewport.scrollTop += offset - anchor.offset;
+      return;
+    }
+  }
+
+  viewport.scrollTop = anchor.scrollTop + (viewport.scrollHeight - anchor.scrollHeight);
+}
 const LOCAL_REPLY_CONTEXT_STORAGE_KEY = "whatsapp-cloud-inbox-reply-contexts";
 const LOCAL_REPLY_CONTEXT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_LOCAL_REPLY_CONTEXTS = 200;
@@ -323,6 +380,7 @@ export function MessageView({
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
   const [showInteractiveDialog, setShowInteractiveDialog] = useState(false);
   const [isNearBottom, setIsNearBottom] = useState(true);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -331,6 +389,11 @@ export function MessageView({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastInitialScrollKeyRef = useRef("");
   const highlightTimeoutRef = useRef<number | null>(null);
+  const loadingOlderRef = useRef(false);
+  const loadGenerationRef = useRef(0);
+  const pendingScrollAnchorRef = useRef<ScrollAnchor | null>(null);
+  const skipAutoScrollRef = useRef(false);
+  const loadOlderMessagesRef = useRef<() => void>(() => {});
   const localReplyContextsRef = useRef<LocalReplyContexts>({});
   const [localReplyContextVersion, setLocalReplyContextVersion] = useState(0);
   const queryClient = useQueryClient();
@@ -347,11 +410,9 @@ export function MessageView({
         ? [conversationId]
         : [];
   }, [conversationId, conversations]);
-  const threadMessagesQueryKey = useMemo(
-    () => phoneThreadMessagesQueryKey(phoneNumberId, phoneNumber, threadConversationIds),
-    [phoneNumberId, phoneNumber, threadConversationIds],
-  );
   const threadKey = threadConversationIds.join(":");
+  const threadKeyRef = useRef(threadKey);
+  threadKeyRef.current = threadKey;
   const initialScrollKey = `${conversationId ?? ""}:${threadKey}`;
   const composerKey = `${phoneNumberId ?? ""}:${phoneNumber ?? ""}`;
   const previewGenerationRef = useRef(0);
@@ -482,37 +543,141 @@ export function MessageView({
     });
   }, []);
 
-  const fetchThreadMessages = useCallback(async () => {
-    if (threadConversationIds.length === 0) return [];
+  const messageQueries = useMemo(
+    () =>
+      threadConversationIds.map((id) => ({
+        queryKey: conversationMessagesQueryKey(phoneNumberId, id),
+        queryFn: async (): Promise<ConversationHistory> => {
+          const page = await fetchConversationMessages(id, {
+            phoneNumberId,
+            limit: MESSAGE_PAGE_LIMIT,
+          });
+          const existing = queryClient.getQueryData<ConversationHistory>(
+            conversationMessagesQueryKey(phoneNumberId, id),
+          );
+          return mergeLatestMessagePage(existing, page);
+        },
+        staleTime: Infinity,
+        gcTime: 30 * 60_000,
+        refetchOnMount: false,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+      })),
+    [phoneNumberId, queryClient, threadConversationIds],
+  );
+  const conversationQueries = useQueries({ queries: messageQueries });
+  const historyVersion = conversationQueries.map((query) => query.dataUpdatedAt).join(":");
+  const loading =
+    threadConversationIds.length > 0 &&
+    conversationQueries.some((query) => query.isPending);
+  const hasMoreOlder = conversationQueries.some(
+    (query) => Boolean(query.data?.hasMoreOlder && query.data.olderCursor),
+  );
+  const latestConversationId = threadConversationIds[0];
+  const latestHistoryLoaded = Boolean(conversationQueries[0]?.data);
 
-    const latestConversationId = threadConversationIds[0];
-    const messageBatches = await Promise.all(
-      threadConversationIds.map((threadConversationId) => {
-        const queryKey = conversationMessagesQueryKey(phoneNumberId, threadConversationId);
-        const cachedMessages = queryClient.getQueryData<Message[]>(queryKey);
+  const { threadMessages, messages } = useMemo(() => {
+    // Cache writes and saved reply context do not change the other dependencies.
+    void historyVersion;
+    void localReplyContextVersion;
+    const histories = threadConversationIds.flatMap((id) => {
+      const history = queryClient.getQueryData<ConversationHistory>(
+        conversationMessagesQueryKey(phoneNumberId, id),
+      );
+      return history ? [history] : [];
+    });
+    const normalized = applyLocalReplyContexts(
+      normalizeMessages(histories.flatMap((history) => history.messages)),
+    );
+    return {
+      threadMessages: normalized,
+      messages: filterMessagesToHistoryFrontier(normalized, histories),
+    };
+  }, [
+    applyLocalReplyContexts,
+    historyVersion,
+    localReplyContextVersion,
+    phoneNumberId,
+    queryClient,
+    threadConversationIds,
+  ]);
 
-        if (cachedMessages && threadConversationId !== latestConversationId) {
-          return cachedMessages;
-        }
+  const refreshCurrentThread = useCallback(async () => {
+    if (threadConversationIds.length === 0) return;
 
-        return queryClient.fetchQuery({
-          queryKey,
-          queryFn: () => fetchConversationMessages(threadConversationId, phoneNumberId),
-          staleTime: 0,
+    await Promise.all(
+      threadConversationIds.map(async (id) => {
+        const page = await fetchConversationMessages(id, {
+          phoneNumberId,
+          limit: MESSAGE_PAGE_LIMIT,
         });
+        queryClient.setQueryData<ConversationHistory>(
+          conversationMessagesQueryKey(phoneNumberId, id),
+          (current) => mergeLatestMessagePage(current, page),
+        );
       }),
     );
+  }, [phoneNumberId, queryClient, threadConversationIds]);
 
-    return applyLocalReplyContexts(normalizeMessages(messageBatches.flat()));
-  }, [applyLocalReplyContexts, phoneNumberId, queryClient, threadConversationIds]);
+  const loadOlderMessages = useCallback(async () => {
+    if (loadingOlderRef.current) return;
 
-  const { data: messages = [], isPending: loading } = useQuery({
-    queryKey: threadMessagesQueryKey,
-    queryFn: fetchThreadMessages,
-    enabled: threadConversationIds.length > 0,
-    refetchInterval: 5_000,
-    refetchOnMount: false,
-  });
+    const loadedHistories = threadConversationIds.flatMap((id) => {
+      const history = queryClient.getQueryData<ConversationHistory>(
+        conversationMessagesQueryKey(phoneNumberId, id),
+      );
+      return history ? [{ conversationId: id, history }] : [];
+    });
+    const targetConversationId = selectConversationForOlderPage(loadedHistories);
+    const history = loadedHistories.find(
+      (item) => item.conversationId === targetConversationId,
+    )?.history;
+    if (!targetConversationId || !history?.olderCursor) return;
+
+    const requestThreadKey = threadKeyRef.current;
+    const generation = loadGenerationRef.current + 1;
+    loadGenerationRef.current = generation;
+    loadingOlderRef.current = true;
+    setIsLoadingOlder(true);
+
+    try {
+      const page = await fetchConversationMessages(targetConversationId, {
+        phoneNumberId,
+        after: history.olderCursor,
+        limit: MESSAGE_PAGE_LIMIT,
+      });
+      const stillOnThread =
+        loadGenerationRef.current === generation &&
+        threadKeyRef.current === requestThreadKey;
+      if (stillOnThread) {
+        const viewport = getScrollViewport();
+        if (viewport) {
+          pendingScrollAnchorRef.current = captureScrollAnchor(viewport);
+          skipAutoScrollRef.current = true;
+        } else {
+          loadingOlderRef.current = false;
+        }
+        setIsLoadingOlder(false);
+      }
+
+      queryClient.setQueryData<ConversationHistory>(
+        conversationMessagesQueryKey(phoneNumberId, targetConversationId),
+        (current) => mergeOlderMessagePage(current ?? history, page),
+      );
+    } catch (error) {
+      if (loadGenerationRef.current === generation) {
+        pendingScrollAnchorRef.current = null;
+        skipAutoScrollRef.current = false;
+        loadingOlderRef.current = false;
+        setIsLoadingOlder(false);
+      }
+      console.error("Error loading earlier messages:", error);
+    }
+  }, [getScrollViewport, phoneNumberId, queryClient, threadConversationIds]);
+
+  loadOlderMessagesRef.current = () => {
+    void loadOlderMessages();
+  };
 
   useEffect(() => {
     try {
@@ -529,35 +694,78 @@ export function MessageView({
   }, [persistLocalReplyContexts]);
 
   useEffect(() => {
-    const currentMessages = queryClient.getQueryData<Message[]>(threadMessagesQueryKey);
-    if (!currentMessages) return;
+    if (!latestConversationId || !latestHistoryLoaded) return;
 
-    queryClient.setQueryData(
-      threadMessagesQueryKey,
-      applyLocalReplyContexts(currentMessages),
-    );
-  }, [applyLocalReplyContexts, localReplyContextVersion, queryClient, threadMessagesQueryKey]);
+    let stopped = false;
+    const queryKey = conversationMessagesQueryKey(phoneNumberId, latestConversationId);
 
-  const refreshCurrentThread = useCallback(async () => {
-    if (threadConversationIds.length === 0) return;
+    const poll = async () => {
+      try {
+        const page = await fetchConversationMessages(latestConversationId, {
+          phoneNumberId,
+          limit: MESSAGE_PAGE_LIMIT,
+        });
+        if (stopped) return;
+        queryClient.setQueryData<ConversationHistory>(
+          queryKey,
+          (current) => mergeLatestMessagePage(current, page),
+        );
+      } catch (error) {
+        console.error("Polling error:", error);
+      }
+    };
 
-    const messageBatches = await Promise.all(
-      threadConversationIds.map((threadConversationId) =>
-        queryClient.fetchQuery({
-          queryKey: conversationMessagesQueryKey(phoneNumberId, threadConversationId),
-          queryFn: () => fetchConversationMessages(threadConversationId, phoneNumberId),
-          staleTime: 0,
-        }),
-      ),
-    );
+    const updatedAt = queryClient.getQueryState(queryKey)?.dataUpdatedAt ?? 0;
+    if (Date.now() - updatedAt >= MESSAGE_POLL_INTERVAL_MS && !document.hidden) {
+      void poll();
+    }
 
-    queryClient.setQueryData(
-      threadMessagesQueryKey,
-      applyLocalReplyContexts(normalizeMessages(messageBatches.flat())),
-    );
-  }, [applyLocalReplyContexts, phoneNumberId, queryClient, threadConversationIds, threadMessagesQueryKey]);
+    const intervalId = window.setInterval(() => {
+      if (!document.hidden) void poll();
+    }, MESSAGE_POLL_INTERVAL_MS);
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) void poll();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      stopped = true;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [latestConversationId, latestHistoryLoaded, phoneNumberId, queryClient]);
+
+  const seenThreadKeyRef = useRef(threadKey);
+  if (seenThreadKeyRef.current !== threadKey) {
+    seenThreadKeyRef.current = threadKey;
+    loadGenerationRef.current += 1;
+    loadingOlderRef.current = false;
+    pendingScrollAnchorRef.current = null;
+    skipAutoScrollRef.current = false;
+    if (isLoadingOlder) setIsLoadingOlder(false);
+  }
+
+  useLayoutEffect(() => {
+    const anchor = pendingScrollAnchorRef.current;
+    if (!anchor) return;
+
+    pendingScrollAnchorRef.current = null;
+    const viewport = getScrollViewport();
+    if (viewport) {
+      restoreScrollAnchor(viewport, anchor);
+    }
+    loadingOlderRef.current = false;
+  }, [getScrollViewport, messages]);
 
   useEffect(() => {
+    if (skipAutoScrollRef.current) {
+      const timeoutId = window.setTimeout(() => {
+        skipAutoScrollRef.current = false;
+      }, 0);
+      return () => window.clearTimeout(timeoutId);
+    }
+
     if (isNearBottom) {
       scrollToBottom();
     }
@@ -628,8 +836,8 @@ export function MessageView({
   ]);
 
   useEffect(() => {
-    setCanSendRegularMessage(isWithin24HourWindow(messages));
-  }, [messages]);
+    setCanSendRegularMessage(isWithin24HourWindow(threadMessages));
+  }, [threadMessages]);
 
   useEffect(() => {
     previewGenerationRef.current += 1;
@@ -661,30 +869,26 @@ export function MessageView({
     };
   }, []);
 
-  // Track if user is near bottom of scroll
   useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
+    if (loading) return;
+
+    const viewport = getScrollViewport();
+    if (!viewport) return;
 
     const handleScroll = () => {
-      const viewport = container.querySelector(
-        "[data-radix-scroll-area-viewport]",
-      );
-      if (!viewport) return;
-
       const { scrollTop, scrollHeight, clientHeight } = viewport;
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-      setIsNearBottom(distanceFromBottom < 100);
+      const nearBottom = distanceFromBottom < NEAR_BOTTOM_THRESHOLD_PX;
+      setIsNearBottom(nearBottom);
+
+      if (scrollTop < LOAD_OLDER_SCROLL_THRESHOLD_PX && !nearBottom) {
+        loadOlderMessagesRef.current();
+      }
     };
 
-    const viewport = container.querySelector(
-      "[data-radix-scroll-area-viewport]",
-    );
-    if (viewport) {
-      viewport.addEventListener("scroll", handleScroll);
-      return () => viewport.removeEventListener("scroll", handleScroll);
-    }
-  }, []);
+    viewport.addEventListener("scroll", handleScroll);
+    return () => viewport.removeEventListener("scroll", handleScroll);
+  }, [getScrollViewport, loading, threadKey]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -935,6 +1139,26 @@ export function MessageView({
         className="h-0 flex-1 overscroll-contain p-3 sm:p-4 lg:p-6"
       >
         <div className="mx-auto w-full max-w-[900px]">
+          {(hasMoreOlder || isLoadingOlder) && (
+            <div className="flex h-8 items-center justify-center" aria-live="polite">
+              {isLoadingOlder ? (
+                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  Loading earlier messages…
+                </span>
+              ) : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs text-muted-foreground"
+                  onClick={() => void loadOlderMessages()}
+                >
+                  Load earlier messages
+                </Button>
+              )}
+            </div>
+          )}
           {messages.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               No messages yet
@@ -1289,7 +1513,7 @@ export function MessageView({
                 <AlertCircle className="h-5 w-5 text-[var(--chat-warning-foreground)] flex-shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-foreground mb-3">
-                    {getDisabledInputMessage(messages)}
+                    {getDisabledInputMessage(threadMessages)}
                   </p>
                   <Button
                     onClick={() => setShowTemplateDialog(true)}

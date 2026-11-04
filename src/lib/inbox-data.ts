@@ -76,17 +76,39 @@ export type ConversationThread = {
 
 export const CONVERSATIONS_QUERY_KEY = ['conversations'] as const;
 
+export const MESSAGE_PAGE_LIMIT = 100;
+
 export function conversationMessagesQueryKey(phoneNumberId: string | undefined, conversationId: string) {
   return ['conversation-messages', phoneNumberId ?? '', conversationId] as const;
 }
 
-export function phoneThreadMessagesQueryKey(
-  phoneNumberId: string | undefined,
-  phoneNumber: string | undefined,
-  conversationIds: string[]
-) {
-  return ['phone-thread-messages', phoneNumberId ?? '', phoneNumber ?? '', conversationIds.join(':')] as const;
-}
+export type MessagePaging = {
+  cursors?: {
+    before?: string | null;
+    after?: string | null;
+  } | null;
+  next?: string | null;
+  previous?: string | null;
+};
+
+export type ConversationMessagesPage = {
+  messages: Message[];
+  paging?: MessagePaging;
+};
+
+export type ConversationHistory = {
+  messages: Message[];
+  olderCursor: string | null;
+  hasMoreOlder: boolean;
+  hasLoadedOlder: boolean;
+};
+
+export type FetchConversationMessagesOptions = {
+  phoneNumberId?: string;
+  after?: string;
+  before?: string;
+  limit?: number;
+};
 
 function parseTimestamp(timestamp?: string): number {
   if (!timestamp) return 0;
@@ -118,10 +140,21 @@ export async function fetchConversations(): Promise<Conversation[]> {
   return data.data || [];
 }
 
-export async function fetchConversationMessages(conversationId: string, phoneNumberId?: string): Promise<Message[]> {
-  const params = new URLSearchParams({ limit: '100' });
-  if (phoneNumberId) {
-    params.set('phoneNumberId', phoneNumberId);
+export async function fetchConversationMessages(
+  conversationId: string,
+  options: FetchConversationMessagesOptions = {},
+): Promise<ConversationMessagesPage> {
+  const params = new URLSearchParams({
+    limit: String(options.limit ?? MESSAGE_PAGE_LIMIT),
+  });
+  if (options.phoneNumberId) {
+    params.set('phoneNumberId', options.phoneNumberId);
+  }
+  if (options.after) {
+    params.set('after', options.after);
+  }
+  if (options.before) {
+    params.set('before', options.before);
   }
 
   const response = await fetch(`/api/messages/${conversationId}?${params.toString()}`);
@@ -133,11 +166,177 @@ export async function fetchConversationMessages(conversationId: string, phoneNum
 
   const messages = (data.data || []).map((message: Omit<Message, 'conversationId'>) => ({
     ...message,
-    phoneNumberId: message.phoneNumberId ?? phoneNumberId ?? '',
+    phoneNumberId: message.phoneNumberId ?? options.phoneNumberId ?? '',
     conversationId,
   }));
 
-  return normalizeMessages(messages);
+  return {
+    messages,
+    paging: data.paging,
+  };
+}
+
+export function olderCursorFromPaging(paging?: MessagePaging | null): string | null {
+  if (!paging || typeof paging.next !== 'string' || !paging.next.trim()) return null;
+  const after = paging.cursors?.after;
+  if (typeof after !== 'string') return null;
+  const cursor = after.trim();
+  return cursor || null;
+}
+
+export function historyFromLatestPage(
+  messages: Message[],
+  paging?: MessagePaging | null,
+): ConversationHistory {
+  const olderCursor = olderCursorFromPaging(paging);
+  return {
+    messages,
+    olderCursor,
+    hasMoreOlder: olderCursor !== null,
+    hasLoadedOlder: false,
+  };
+}
+
+function compareMessages(a: Message, b: Message): number {
+  const delta = parseTimestamp(a.createdAt) - parseTimestamp(b.createdAt);
+  if (delta !== 0) return delta;
+  return a.id.localeCompare(b.id);
+}
+
+export function mergeMessages(
+  existing: Message[],
+  incoming: Message[],
+  conflict: 'incoming-wins' | 'existing-wins' = 'incoming-wins',
+): Message[] {
+  const byId = new Map<string, Message>();
+
+  if (conflict === 'existing-wins') {
+    incoming.forEach((message) => byId.set(message.id, message));
+    existing.forEach((message) => byId.set(message.id, message));
+  } else {
+    existing.forEach((message) => byId.set(message.id, message));
+    incoming.forEach((message) => {
+      const previous = byId.get(message.id);
+      byId.set(message.id, previous ? { ...previous, ...message } : message);
+    });
+  }
+
+  return Array.from(byId.values()).sort(compareMessages);
+}
+
+export function mergeLatestMessagePage(
+  history: ConversationHistory | undefined,
+  page: ConversationMessagesPage,
+): ConversationHistory {
+  const latest = historyFromLatestPage(page.messages, page.paging);
+  if (!history) return latest;
+  if (page.messages.length === 0) return history;
+
+  const mergedMessages = mergeMessages(history.messages, page.messages);
+  const historyIds = new Set(history.messages.map((message) => message.id));
+  const overlaps = page.messages.some((message) => historyIds.has(message.id));
+
+  if (!history.hasLoadedOlder || overlaps) {
+    if (!history.hasLoadedOlder) {
+      return {
+        messages: mergedMessages,
+        olderCursor: latest.olderCursor,
+        hasMoreOlder: latest.hasMoreOlder,
+        hasLoadedOlder: false,
+      };
+    }
+
+    return {
+      messages: mergedMessages,
+      olderCursor: history.olderCursor,
+      hasMoreOlder: history.hasMoreOlder,
+      hasLoadedOlder: true,
+    };
+  }
+
+  // The latest page no longer overlaps loaded history, so walk back from the new edge.
+  return {
+    messages: mergedMessages,
+    olderCursor: latest.olderCursor,
+    hasMoreOlder: latest.hasMoreOlder,
+    hasLoadedOlder: false,
+  };
+}
+
+export function mergeOlderMessagePage(
+  history: ConversationHistory,
+  page: ConversationMessagesPage,
+): ConversationHistory {
+  const knownIds = new Set(history.messages.map((message) => message.id));
+  const addedCount = page.messages.filter((message) => !knownIds.has(message.id)).length;
+  const overlapsKnown = page.messages.some((message) => knownIds.has(message.id));
+  const olderCursor = olderCursorFromPaging(page.paging);
+  const cursorAdvanced = olderCursor !== null && olderCursor !== history.olderCursor;
+  // A page of already-loaded messages can still sit in front of older ones after the latest edge moves.
+  const hasMoreOlder = cursorAdvanced && (addedCount > 0 || overlapsKnown);
+
+  return {
+    messages: mergeMessages(history.messages, page.messages, 'existing-wins'),
+    olderCursor: hasMoreOlder ? olderCursor : null,
+    hasMoreOlder,
+    hasLoadedOlder: true,
+  };
+}
+
+function oldestMessageTimestamp(messages: Message[]): number {
+  const contentMessages = messages.filter((message) => message.messageType !== 'reaction');
+  const source = contentMessages.length > 0 ? contentMessages : messages;
+  return source.reduce((oldest, message) => {
+    const time = parseTimestamp(message.createdAt);
+    return time < oldest ? time : oldest;
+  }, Number.POSITIVE_INFINITY);
+}
+
+function incompleteHistoryEdge(history: ConversationHistory): number | null {
+  if (!history.hasMoreOlder || !history.olderCursor || history.messages.length === 0) return null;
+  return oldestMessageTimestamp(history.messages);
+}
+
+export function selectConversationForOlderPage(
+  histories: Array<{ conversationId: string; history: ConversationHistory }>,
+): string | null {
+  let selected: { conversationId: string; oldest: number } | null = null;
+
+  for (const item of histories) {
+    const oldest = incompleteHistoryEdge(item.history);
+    if (oldest === null) continue;
+    // Page the newest incomplete conversation so the timeline stays a contiguous suffix.
+    if (
+      !selected ||
+      oldest > selected.oldest ||
+      (oldest === selected.oldest && item.conversationId.localeCompare(selected.conversationId) < 0)
+    ) {
+      selected = { conversationId: item.conversationId, oldest };
+    }
+  }
+
+  return selected?.conversationId ?? null;
+}
+
+function historyFrontierTimestamp(histories: ConversationHistory[]): number | null {
+  let frontier: number | null = null;
+
+  for (const history of histories) {
+    const oldest = incompleteHistoryEdge(history);
+    if (oldest === null) continue;
+    if (frontier === null || oldest > frontier) frontier = oldest;
+  }
+
+  return frontier;
+}
+
+export function filterMessagesToHistoryFrontier(
+  messages: Message[],
+  histories: ConversationHistory[],
+): Message[] {
+  const frontier = historyFrontierTimestamp(histories);
+  if (frontier === null) return messages;
+  return messages.filter((message) => parseTimestamp(message.createdAt) >= frontier);
 }
 
 export function groupConversationsByPhoneNumber(conversations: Conversation[]): ConversationThread[] {
