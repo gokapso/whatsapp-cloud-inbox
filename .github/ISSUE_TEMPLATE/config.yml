@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Kapso Support
+    url: https://app.kapso.ai
+    about: Get help with Kapso API credentials and setup
+  - name: WhatsApp Cloud API Documentation
+    url: https://developers.facebook.com/docs/whatsapp/cloud-api
+    about: Official WhatsApp Cloud API documentation
+  - name: Question or Discussion
+    url: https://github.com/gokapso/whatsapp-cloud-inbox/discussions
+    about: Ask questions or discuss ideas with the community

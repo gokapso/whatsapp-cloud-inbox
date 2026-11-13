@@ -117,7 +117,14 @@ The runtime checks start built app instances on `127.0.0.1:16471` and `127.0.0.1
 
 ## Contributing
 
-Issues and PRs welcome. Keep it simple.
+We welcome contributions! Whether you're fixing bugs, adding features, or improving documentation, your help is appreciated.
+
+Check out our **[Contributing Guide](CONTRIBUTING.md)** to get started.
+
+**Quick links:**
+- [Report a bug](https://github.com/gokapso/whatsapp-cloud-inbox/issues/new?template=bug_report.yml)
+- [Request a feature](https://github.com/gokapso/whatsapp-cloud-inbox/issues/new?template=feature_request.yml)
+- [View discussions](https://github.com/gokapso/whatsapp-cloud-inbox/discussions)
 
 ## License
 
